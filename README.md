@@ -186,6 +186,19 @@ settlement** (principle 1).
 - pretend: emit `payClicked=true` only if the Pay control was actually
   activated; obfuscated code (eval, encoded blobs) is rejected without review.
 
+## 2-bis. Protocol version and validation
+
+Every signal the SDK emits is stamped `{ v: 1, task: "…" }` — the SDK
+imposes both, payload values are ignored. `emitResult(task, payload)`
+validates the payload against the task's shape (executable validators in
+`sdk/index.mjs`, documentary JSON Schemas in `schemas/`, shared corpus in
+`fixtures/corpus.json` — CI verifies all implementations agree on that
+corpus) and refuses a malformed result with exit 7. Financial rule: a
+malformed BOOK result still emits a minimal well-formed line carrying
+`payClicked` first, and the runtime classifies any malformed/unreadable
+post-Pay outcome as UNCERTAIN — never an automatic refund. Run the corpus
+offline: `node test-sdk.mjs`.
+
 ## 3. The manifest
 
 One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com/manifest.yaml).
@@ -193,6 +206,7 @@ One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com
 | Key | Meaning |
 |---|---|
 | `domain` | the supplier host |
+| `protocol_version` | the SDK/signal protocol the recipe speaks (current: `1`); the runtime refuses versions it does not support and treats a signal `v` that contradicts the manifest as malformed |
 | `recipe` | entry file |
 | `flow` | `guest` · `ephemeral-account` · `account` (expensive, avoid) |
 | `kind` | `browser` (this contract) · `api` (a connector — same signals, no browser) |

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "__FULFILLER_RESULT__ — task: offer-details (protocol v1)",
+  "type": "object",
+  "required": ["v", "task", "fares"],
+  "properties": {
+    "v": { "const": 1 },
+    "task": { "const": "offer-details" },
+    "base": { "type": "number" },
+    "fares": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["price"],
+        "properties": {
+          "price": { "type": "number", "exclusiveMinimum": 0 },
+          "conditions": { "type": "array" }
+        }
+      }
+    }
+  }
+}

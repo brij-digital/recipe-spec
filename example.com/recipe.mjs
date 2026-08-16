@@ -12,7 +12,7 @@
 //   TASK=book PURCHASE_MODE=dry FLIGHT="..." PAX_GIVEN=Jean PAX_SURNAME=Martin node example.com/recipe.mjs
 //   TASK=book PURCHASE_MODE=approve ... APPROVE_SIGNAL_FILE=/tmp/verdict node example.com/recipe.mjs
 //     (then: echo APPROVE > /tmp/verdict — that is the runtime's gate, simulated by hand)
-import { L, sleep, emitResult, emitApproval, emit3DS, emitSession,
+import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitSession,
   makeBail, waitApproval, waitOTP, EXIT } from "../sdk/index.mjs";
 
 // ── the job, read from the environment (§2 of the README) ──
@@ -52,7 +52,8 @@ const pretendSupplier={
 if(TASK==="search"){
   const offers=pretendSupplier.offers.slice().sort((a,b)=>a.price-b.price);
   L(`search ${DCITY}->${ACITY} ${DDATE}: ${offers.length} firm offers`);
-  emitResult({ route:`${DCITY}->${ACITY}`, ddate:DDATE, tripType:"ow", count:offers.length, offers });
+  emitResult("search", { route:`${DCITY}->${ACITY}`, ddate:DDATE, tripType:"ow", count:offers.length, offers });
+  await drain();
   emitSession("");   // no browser session in the toy; a real BB run emits its session id on keep-alive
   process.exit(EXIT.ok);
 }
@@ -68,7 +69,8 @@ if(TASK==="offer-details"){
   if(!f) await bail(EXIT.offerGone,`offer not found (no longer available?): ${FLIGHT}`);
   const fares=pretendSupplier.fares(f);
   L(`fares for ${FLIGHT}: ${fares.map(t=>`${t.brand} $${t.price}`).join(" | ")}`);
-  emitResult({ flight:FLIGHT, returnFlight:null, base:f.price, fares });
+  emitResult("offer-details", { flight:FLIGHT, returnFlight:null, base:f.price, fares });
+  await drain();
   process.exit(EXIT.ok);
 }
 
@@ -100,7 +102,8 @@ if(total>CAP){ bookOutcome.reason="over cap"; await bail(EXIT.offerGone,`total $
 if(MODE==="dry"){
   bookOutcome.reason="dry mode — stopped before Pay";
   L("dry: stopping before Pay");
-  emitResult(bookOutcome);
+  emitResult("book", bookOutcome);
+  await drain();
   process.exit(EXIT.ok);
 }
 
@@ -125,7 +128,7 @@ await sleep(300);
 if(process.env.OTP_SIGNAL_FILE){
   emit3DS({ sessionId:"toy", need:"otp", total, screenshots:[] });
   const otp=await waitOTP({ file:process.env.OTP_SIGNAL_FILE, timeoutS:Number(process.env.OTP_TIMEOUT_S||300) });
-  if(!otp){ bookOutcome.reason="3DS: no code within the deadline"; emitResult(bookOutcome); process.exit(EXIT.offerGone); }
+  if(!otp){ bookOutcome.reason="3DS: no code within the deadline"; emitResult("book", bookOutcome); await drain(); process.exit(EXIT.offerGone); }
   L("3DS code entered");
 }
 
@@ -134,5 +137,6 @@ if(process.env.OTP_SIGNAL_FILE){
 bookOutcome.reference="EX-0000001";
 bookOutcome.paymentStatus="paid";
 L(`booked — supplier order ${bookOutcome.reference} (settlement still waits for the email oracle)`);
-emitResult(bookOutcome);
+emitResult("book", bookOutcome);
+await drain();
 process.exit(EXIT.ok);

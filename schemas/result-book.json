@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "__FULFILLER_RESULT__ — task: book (protocol v1)",
+  "type": "object",
+  "required": ["v", "task", "payClicked", "paymentStatus"],
+  "properties": {
+    "v": { "const": 1 },
+    "task": { "const": "book" },
+    "payClicked": { "type": "boolean" },
+    "paymentStatus": { "enum": ["paid", "failed", "unverified"] },
+    "tripOrderId": { "type": "string" },
+    "malformed": { "type": "boolean" }
+  }
+}

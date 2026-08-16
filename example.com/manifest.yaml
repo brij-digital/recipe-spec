@@ -1,5 +1,6 @@
 # example.com — the toy domain. A real manifest describes a real supplier;
 # every field below is read by the runtime (see README §3).
+protocol_version: 1
 domain: example.com
 recipe: recipe.mjs
 

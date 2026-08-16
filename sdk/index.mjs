@@ -1,12 +1,13 @@
-// @brij/recipe-sdk v0 — the recipe CONTRACT as code.
+// @brij/recipe-sdk v1 — the recipe CONTRACT as code.
 //
 // Everything a recipe says to the runtime goes through here: the machine
 // signals (__FULFILLER_*), the exit codes, the screenshot evidence, and the
 // two runtime gates (human approval, 3DS code). A recipe that uses this
-// module cannot mis-implement the contract — the schema of the conversation
-// is enforced by construction, and the conformance CI can trust the shape.
+// module refuses to emit a malformed signal (EXIT.malformed); the runtime
+// revalidates server-side and treats any non-conforming line as recipe
+// failure, never as data — the SDK is DX, the runner is the trust boundary.
 //
-// v0 is a LIBRARY: it runs inside the recipe's process, so it adds zero
+// v1 is a LIBRARY: it runs inside the recipe's process, so it adds zero
 // security (same trust domain). Its value is DX + contract fidelity + a
 // structured trace. The signatures are the durable part: a later version
 // moves the sensitive primitives behind an RPC boundary to the trusted
@@ -36,7 +37,14 @@ export const EXIT = {
   checkoutFail: 4, // could not reach the checkout
   returnFail: 5,   // round-trip return selection failed
   paxRejected: 6,  // passenger form rejected — stop, never hammer
+  malformed: 7,    // the recipe built a result that violates the schema — the SDK refused to emit it
 };
+
+// ── protocol version ──
+// Stamped by the SDK into EVERY signal ({v, task, ...}); declared by the
+// manifest as protocol_version. The runtime refuses a version it does not
+// support and treats a v/manifest mismatch as a malformed signal.
+export const PROTOCOL_VERSION = 1;
 
 // ── narration + timing ──
 export const L = s => console.log(s);
@@ -52,10 +60,70 @@ export const until = async (cond, ms = 8000, step = 400) => {
   return false;
 };
 
+// ── result validation — hand-rolled, zero dependencies (this file is
+// vendored; a schema library would contaminate every recipe). The JSON
+// Schemas under schemas/ are the documentary twin; CI verifies both agree
+// on the fixture corpus. The runtime revalidates server-side: this SDK is
+// DX, the runner is the trust boundary.
+const isNum = x => typeof x === "number" && Number.isFinite(x);
+const isStr = x => typeof x === "string" && x.length > 0;
+
+export const validators = {
+  search(p) {
+    const errs = [];
+    if (!Array.isArray(p.offers)) { errs.push("offers must be an array"); return errs; }
+    if (!Number.isInteger(p.count) || p.count !== p.offers.length) errs.push("count must equal offers.length");
+    p.offers.forEach((o, i) => {
+      const oneWay = isNum(o.price) && o.price > 0;
+      const roundTrip = isNum(o.price_total) && o.price_total > 0 && o.outbound && o.return;
+      if (!oneWay && !roundTrip) errs.push(`offers[${i}]: needs price>0 (one-way) or price_total>0 + outbound + return (round trip)`);
+      if (!isStr(o.id) && !(o.outbound && isStr(o.outbound.id))) errs.push(`offers[${i}]: id missing`);
+    });
+    return errs;
+  },
+  "offer-details"(p) {
+    const errs = [];
+    if (!Array.isArray(p.fares)) { errs.push("fares must be an array"); return errs; }
+    p.fares.forEach((f, i) => {
+      if (!isNum(f.price) || f.price <= 0) errs.push(`fares[${i}]: price must be > 0`);
+      if (f.conditions !== undefined && !Array.isArray(f.conditions)) errs.push(`fares[${i}]: conditions must be an array`);
+    });
+    return errs;
+  },
+  book(p) {
+    const errs = [];
+    if (typeof p.payClicked !== "boolean") errs.push("payClicked must be a boolean");
+    if (!["paid", "failed", "unverified"].includes(p.paymentStatus)) errs.push("paymentStatus must be paid|failed|unverified");
+    return errs;
+  },
+};
+
 // ── signal emission — the ONLY way a recipe should talk to the runner ──
-export const emitResult = obj => console.log(MARKERS.result + JSON.stringify(obj));
-export const emitApproval = obj => console.log(MARKERS.approval + JSON.stringify(obj));
-export const emit3DS = obj => console.log(MARKERS.threeDS + JSON.stringify(obj));
+// emitResult(task, payload) VALIDATES, stamps {v, task} (the SDK imposes
+// both — payload values are ignored), and refuses a malformed result with
+// EXIT.malformed. Financial conservatism: a malformed BOOK result still
+// emits a minimal well-formed line carrying payClicked first, so the
+// runner never loses the one fact that decides refund vs uncertain.
+export const emitResult = (task, payload) => {
+  const validate = validators[task];
+  if (!validate) { L(`emitResult: unknown task "${task}"`); process.exitCode = EXIT.malformed; return false; }
+  const errs = validate(payload ?? {});
+  if (errs.length) {
+    errs.forEach(e => L("malformed result: " + e));
+    if (task === "book") {
+      console.log(MARKERS.result + JSON.stringify({
+        v: PROTOCOL_VERSION, task, payClicked: payload?.payClicked === true,
+        paymentStatus: "unverified", malformed: true,
+      }));
+    }
+    process.exitCode = EXIT.malformed;
+    return false;
+  }
+  console.log(MARKERS.result + JSON.stringify({ ...payload, v: PROTOCOL_VERSION, task }));
+  return true;
+};
+export const emitApproval = obj => console.log(MARKERS.approval + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "approval" }));
+export const emit3DS = obj => console.log(MARKERS.threeDS + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "3ds" }));
 export const emitSession = id => { if (id) console.log(MARKERS.session + id); };
 
 // ── screenshot evidence ──

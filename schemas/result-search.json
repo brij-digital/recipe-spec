@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "__FULFILLER_RESULT__ — task: search (protocol v1)",
+  "type": "object",
+  "required": ["v", "task", "count", "offers"],
+  "properties": {
+    "v": { "const": 1 },
+    "task": { "const": "search" },
+    "route": { "type": "string" },
+    "count": { "type": "integer", "minimum": 0 },
+    "offers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "anyOf": [
+          { "required": ["id", "price"], "properties": { "id": { "type": "string", "minLength": 1 }, "price": { "type": "number", "exclusiveMinimum": 0 } } },
+          { "required": ["price_total", "outbound", "return"], "properties": { "price_total": { "type": "number", "exclusiveMinimum": 0 } } }
+        ]
+      }
+    }
+  }
+}
