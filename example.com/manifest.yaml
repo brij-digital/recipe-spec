@@ -1,0 +1,42 @@
+# example.com — the toy domain. A real manifest describes a real supplier;
+# every field below is read by the runtime (see README §3).
+domain: example.com
+recipe: recipe.mjs
+
+flow: guest                      # no account, no login — the target family
+kind: browser                    # browser | api (a connector speaks the same signals)
+
+oracle:
+  type: email                    # settlement truth = the supplier's confirmation email
+  sender_domains: [example.com]  # DKIM-verified sender
+  template: example_v1           # how "ticket issued" / "cancelled" are recognized
+
+coverage:                        # bounds the search fan-out — quote only what you can book
+  regions: [EU]
+  cabins: [Y]
+  trip_types: [ow]
+
+proxy_country: US                # suppliers serve different inventory per geo;
+                                 # one order's search/details/book share this value
+
+budgets:                         # enforced by the runtime
+  search_s: 90
+  offer_details_s: 120
+  book_s: 600
+  bb_minutes_per_order: 8
+
+payment:
+  currency: USD
+  max_amount: 150                # above this, orders are not routed here
+  three_ds: expected             # the issuer may challenge — handle it (SDK waitOTP)
+
+fares:
+  policy: nonrefundable_only
+  baggage: canonical_triple      # "Personal item · Carry-on · Checked"; silence = Not included
+
+known_traps:                     # what you learned the hard way — quote strings containing ':'
+  - "the toy supplier has no traps; a real one has many — write them down here"
+
+author:
+  partner: example               # your identity = the wallet that paid the submission
+  primary: true
