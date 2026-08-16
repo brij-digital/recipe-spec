@@ -32,7 +32,12 @@ never published.
 2. **An approved recipe is immutable** — identified by the hash the
    marketplace registered. Fixing it means a new version, a new review.
 3. **The runtime gives a recipe only what it is owed** — the environment in
-   §2, nothing else, inside a sandbox with an egress allowlist per domain.
+   §2, nothing else. Enforced today: a whitelisted environment, a per-run
+   working directory, OS confinement (dedicated uid, read-only filesystem
+   outside the run dir). **Target, in progress** (lands before the first
+   external author runs): an enforced egress allowlist per domain, and the
+   card/PII moved behind runner-held capabilities — until then external
+   recipes run in dry mode only, never with card data.
 4. **A slow or wasteful recipe costs its author, not the marketplace.** Run
    cost (browser minutes, model tokens) is deducted from your payout.
 5. **Never buy what wasn't asked.** Refuse the checkout if it carries any
@@ -174,7 +179,8 @@ settlement** (principle 1).
 
 - persist, log or transmit a card number, CVV or passenger identity beyond
   the supplier's own forms;
-- reach any host outside its manifest's egress allowlist;
+- reach any host outside its manifest's egress allowlist (contractual
+  today, OS-enforced before the first external author runs);
 - pay for anything the order did not ask for;
 - retry a Pay click; hammer a form that rejected input;
 - pretend: emit `payClicked=true` only if the Pay control was actually
