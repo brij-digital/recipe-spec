@@ -194,3 +194,74 @@ export const waitOTP = async ({ file, timeoutS }) => {
   }
   return "";
 };
+
+// ── runtimeModel: the LLM behind Stagehand, WITHOUT an Anthropic key ──────
+// Stagehand v4 accepts a "bring your own LLM" callback ({ generate }) that
+// runs in THIS process. The runtime gives the recipe LLM_PROXY_URL (a
+// loopback proxy holding the real key) and LLM_RUN_TOKEN (a per-run token
+// with a budget, revoked when the run ends). generate() translates
+// Stagehand's provider-neutral request into an Anthropic Messages call on
+// that proxy and translates the answer back. Text and image blocks map 1:1;
+// a json_schema response format is asked for through a single forced tool,
+// which is the reliable way to get schema-shaped JSON from Claude.
+//
+// Usage: model: runtimeModel()   — when LLM_PROXY_URL is unset (local dev
+// with your own key), returns null so callers can fall back to
+// { modelName, apiKey }.
+export const runtimeModel = ({ modelName = process.env.SH_MODEL || "anthropic/claude-sonnet-4-6", maxTokens = 4096 } = {}) => {
+  const base = (process.env.LLM_PROXY_URL || "").replace(/\/$/, "");
+  const token = process.env.LLM_RUN_TOKEN || "";
+  if (!base || !token) return null;
+  const model = modelName.replace(/^anthropic\//, "");
+  const toBlocks = c => (Array.isArray(c) ? c : [c]).map(b => {
+    if (!b || typeof b !== "object") return { type: "text", text: String(b ?? "") };
+    if (b.type === "text") return { type: "text", text: b.text ?? "" };
+    if (b.type === "image") return { type: "image", source: { type: "base64", media_type: b.mimeType || "image/png", data: b.data } };
+    if (b.type === "tool_use") return { type: "tool_use", id: b.id || b.toolUseId || "tu_" + Math.random().toString(36).slice(2), name: b.name, input: b.input ?? {} };
+    if (b.type === "tool_result") return { type: "tool_result", tool_use_id: b.toolUseId || b.tool_use_id || b.id, content: toBlocks(b.content || []) };
+    return { type: "text", text: JSON.stringify(b) };
+  });
+  const generate = async params => {
+    const body = {
+      model, max_tokens: maxTokens,
+      messages: (params.messages || []).map(m => ({ role: m.role, content: toBlocks(m.content) })),
+    };
+    if (params.systemPrompt) body.system = params.systemPrompt;
+    if (typeof params.temperature === "number") body.temperature = params.temperature;
+    if (params.stopSequences?.length) body.stop_sequences = params.stopSequences;
+    const wantsJSON = params.responseFormat?.type === "json_schema";
+    const tools = [];
+    if (wantsJSON) tools.push({ name: params.responseFormat.name || "respond", description: params.responseFormat.description || "Answer with the requested structure.", input_schema: params.responseFormat.schema });
+    for (const t of params.tools || []) tools.push({ name: t.name, description: t.description || "", input_schema: t.inputSchema || t.input_schema || { type: "object", properties: {} } });
+    if (tools.length) body.tools = tools;
+    if (wantsJSON) body.tool_choice = { type: "tool", name: tools[0].name };
+    const res = await fetch(base + "/v1/messages", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": token, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify(body),
+    });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`llm proxy ${res.status}: ${text.slice(0, 300)}`);
+    const out = JSON.parse(text);
+    const usage = out.usage ? {
+      inputTokens: out.usage.input_tokens || 0, outputTokens: out.usage.output_tokens || 0,
+      totalTokens: (out.usage.input_tokens || 0) + (out.usage.output_tokens || 0),
+      cachedInputTokens: out.usage.cache_read_input_tokens || 0,
+    } : undefined;
+    const blocks = out.content || [];
+    if (wantsJSON) {
+      const tu = blocks.find(b => b.type === "tool_use");
+      let structured = tu?.input;
+      if (structured === undefined) {
+        const t = blocks.filter(b => b.type === "text").map(b => b.text).join("");
+        try { structured = JSON.parse(t.replace(/^```(?:json)?\s*|\s*```$/g, "")); } catch { throw new Error("llm answered without the requested structure"); }
+      }
+      return { role: "assistant", content: { type: "text", text: JSON.stringify(structured) }, outputFormat: "json_schema", structuredContent: structured, stopReason: out.stop_reason || undefined, usage };
+    }
+    const content = blocks.map(b => b.type === "text" ? { type: "text", text: b.text }
+      : b.type === "tool_use" ? { type: "tool_use", id: b.id, name: b.name, input: b.input }
+      : { type: "text", text: JSON.stringify(b) });
+    return { role: "assistant", content: content.length === 1 ? content[0] : content, outputFormat: "text", stopReason: out.stop_reason || undefined, usage };
+  };
+  return { generate };
+};
