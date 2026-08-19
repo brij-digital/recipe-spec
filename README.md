@@ -126,6 +126,11 @@ The SDK's `waitApproval` / `waitOTP` implement both — don't reimplement.
 
 ### 2.7 Runtime & browser
 
+**Node ≥ 22** (`package.json` `engines`): Stagehand v4 relies on the global
+`WebSocket` that Node exposes natively only from 22 — on Node 20 a recipe dies
+at import with `WebSocket is not defined`. The marketplace runs 22; pin the
+same locally.
+
 | Env | Meaning |
 |---|---|
 | `BB=1` | run on the marketplace's remote browser (headless, proxies, captcha solving) |
@@ -133,6 +138,29 @@ The SDK's `waitApproval` / `waitOTP` implement both — don't reimplement.
 | `BB_PROXY_COUNTRY` | proxy geo pin — **suppliers serve different inventory per geo**; one order's search, details and book must share it |
 | `ANTHROPIC_API_KEY` | model access for the few steps that need model-driven actions (card iframes, Pay); provided on `book` only, scoped and budgeted |
 | `FROM` `STOP` `KEEP` `FRESH` `ONLY` | developer controls — not used in production |
+
+### 2.7-bis Reading the supplier's JSON (`captureJSON`)
+
+Prices, times and fare menus arrive as JSON the supplier's front-end fetches —
+complete and typed. **Read them off the wire, do not scrape the DOM** (the DOM
+is a lossy, shifting rendering of that JSON; a fare table read from HTML breaks
+on the next A/B redesign, the payload does not). Stagehand exposes no network
+events, so the SDK's `captureJSON(cdpUrl, routes)` opens a parallel Playwright
+CDP client on the same browser and buckets the responses you name:
+
+```js
+const net = await captureJSON(process.env.BB_CONNECT_URL, {
+  fares: { match: /FareOptions/, key: j => j.flightNo, parse: j => j.fares,
+           keep: (old, fresh) => fresh.length >= old.length }, // refuse a partial re-emit
+});
+// …drive the page (Stagehand / the page adapter)…
+const menu = await net.until("fares", flightNo, 15000);  // null on timeout
+await net.close();
+```
+
+The click only *triggers* the request; `captureJSON` gives you the payload it
+produced. `keep` guards the case where a supplier re-emits a smaller payload
+after the full one. See the reference recipe for a worked example.
 
 ### 2.8 Signals — stdout, one line each, `__NAME__` + JSON
 

@@ -265,3 +265,67 @@ export const runtimeModel = ({ modelName = process.env.SH_MODEL || "anthropic/cl
   };
   return { generate };
 };
+
+// ── captureJSON: the supplier's own JSON, read off the wire ────────────────
+// Every browser recipe needs the same thing: the availability / fare / basket
+// payloads the supplier's front-end fetches, read as JSON instead of scraped
+// from the DOM (prices, times and fare menus are complete and typed there;
+// the DOM is a lossy, shifting rendering of them). Stagehand does not expose
+// network events, so this opens a PARALLEL Playwright CDP client on the same
+// browser and listens to responses — the reference recipe has done exactly
+// this since day one; this is that pattern, supplier-agnostic.
+//
+//   const net = await captureJSON(cdpUrl, {
+//     list:  { match: /FlightListSearch/, key: () => "list" },            // one payload, latest wins
+//     fares: { match: /FlightMiddleSearch/, key: j => j.flightNo,         // many payloads, keyed
+//              parse: j => j.fares, keep: (old, fresh) => fresh.length >= old.length },
+//   });
+//   …drive the page with Stagehand / the page adapter…
+//   const menu = await net.until("fares", "FR9440", 15000);              // null on timeout
+//   net.map.list; net.count("fares"); await net.close();
+//
+// routes[name] = { match, key?, parse?, keep? }
+//   match: RegExp | string | (url) => boolean — which responses to read;
+//   key:   (json, url) => string|null — the bucket inside net.map[name]
+//          (default "*" = single latest payload; return null to skip);
+//   parse: (json, url) => value stored (default: the JSON itself);
+//   keep:  (old, fresh) => boolean — accept a replacement (default true).
+//          A supplier may re-emit a PARTIAL payload after the full one (Trip
+//          does, per cabin tab); keep() lets a recipe refuse the downgrade.
+// Non-JSON or unparsable bodies are ignored; nothing here ever throws into
+// the recipe. cdpUrl is the Browserbase connect URL (BB_CONNECT_URL) or the
+// local http://127.0.0.1:<port>. playwright is imported lazily so the toy
+// recipe and the validators stay dependency-free.
+export const captureJSON = async (cdpUrl, routes, { log = () => {} } = {}) => {
+  const { chromium } = await import("playwright");
+  const browser = await chromium.connectOverCDP(cdpUrl);
+  const map = {}, hits = {};
+  for (const name of Object.keys(routes)) { map[name] = {}; hits[name] = 0; }
+  const matches = (m, url) => m instanceof RegExp ? m.test(url) : typeof m === "function" ? !!m(url) : url.includes(String(m));
+  const onResponse = async (res) => {
+    const url = res.url();
+    for (const [name, r] of Object.entries(routes)) {
+      if (!matches(r.match, url)) continue;
+      let json; try { json = await res.json(); } catch { continue; }
+      let k; try { k = r.key ? r.key(json, url) : "*"; } catch { k = null; }
+      if (k === null || k === undefined) continue;
+      let v; try { v = r.parse ? r.parse(json, url) : json; } catch { continue; }
+      const old = map[name][String(k)];
+      if (old !== undefined && r.keep && !r.keep(old, v)) { log(`[net] ${name}[${k}]: kept the earlier payload`); continue; }
+      map[name][String(k)] = v; hits[name]++;
+      log(`[net] ${name}[${k}] captured`);
+    }
+  };
+  const wire = ctx => { ctx.on("response", onResponse); ctx.on("page", () => {}); };
+  browser.contexts().forEach(wire);
+  const untilFn = async (name, key = "*", ms = 15000) => {
+    const ok = await until(() => map[name]?.[String(key)] !== undefined, ms);
+    return ok ? map[name][String(key)] : null;
+  };
+  return {
+    map, browser,
+    until: untilFn,
+    count: name => hits[name] || 0,
+    close: async () => { try { await browser.close(); } catch {} },
+  };
+};
