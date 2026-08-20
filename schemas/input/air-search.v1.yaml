@@ -1,0 +1,20 @@
+# air-search.v1 — the PUBLIC input contract of a discover recipe's search
+# task. A manifest references this by name (capabilities.search.input_schema);
+# the runner translates these fields into the transport env the recipe
+# actually reads (DCITY, DDATE, …) — transport names are an implementation
+# detail between runner and recipe, never part of the public contract.
+schema: air-search.v1
+task: search
+required:
+  - origin            # IATA code
+  - destination       # IATA code
+  - depart_date       # YYYY-MM-DD
+  - passengers        # counts: {adults, children, infants}
+optional:
+  - return_date       # YYYY-MM-DD — presence makes the search round-trip
+  - cabin             # Y | S | C (must be inside the manifest's coverage)
+  - top_k             # max offers to return
+  - price_cap         # refuse offers above this (manifest currency)
+runtime_provides:     # injected by the runtime, never caller- or author-declared
+  - browser_session   # keyless connect URL
+  - llm               # budgeted proxy token

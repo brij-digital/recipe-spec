@@ -1,0 +1,21 @@
+# air-book.v1 — the PUBLIC input contract of a fulfill(offer_ref) purchase.
+# Card data, keys, OTP and approval are NEVER free inputs an author may
+# declare: they are runtime_provides, controlled and injected by the
+# marketplace's runtime (ADR 0001 — no fulfill without a settlement oracle).
+schema: air-book.v1
+task: book
+required:
+  - offer_ref         # the offer being bought, from this recipe's discovery
+  - passengers        # full pax list (names, DOB, documents as coverage requires)
+  - price_cap         # the escrowed amount — never pay above it
+optional:
+  - return_offer_ref
+  - fare_ref          # the chosen brand from offer-details (price re-verified live)
+  - contact_phone
+runtime_provides:
+  - contact_email     # the order's oracle address (o-<id>@bookings.brij.fi)
+  - payment_method    # card fields, real/approve/dry gating
+  - approval          # human gate verdict (signal file)
+  - otp               # 3-D Secure code relay (signal file)
+  - browser_session
+  - llm

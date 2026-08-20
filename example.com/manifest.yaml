@@ -4,10 +4,14 @@ protocol_version: 1
 domain: example.com
 recipe: recipe.mjs
 
-capabilities:                    # what this recipe implements (adr/0001); absent = this default
-  discover: true                 # search + offer-details produce normalized offers
-  fulfill:
-    inputs: [offer_ref]          # book targets an offer from this recipe's own discovery
+capabilities:                    # what this recipe implements (adr/0001); absent = this default.
+  search:                        # each task references a VERSIONED input contract in
+    input_schema: air-search.v1  # schemas/input/ — public field names, not transport env
+  offer-details:
+    input_schema: air-offer-details.v1
+  book:
+    input_schema: air-book.v1
+    accepts: [offer_ref]         # what a book target may be; later: url (fulfill-only recipes)
 
 flow: guest                      # no account, no login — the target family
 kind: browser                    # browser | api (a connector speaks the same signals)

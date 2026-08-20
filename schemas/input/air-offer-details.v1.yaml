@@ -1,0 +1,10 @@
+# air-offer-details.v1 — the PUBLIC input contract of the fare drill-down.
+schema: air-offer-details.v1
+task: offer-details
+required:
+  - offer_ref         # an offer id this same recipe's search produced
+optional:
+  - return_offer_ref  # round-trip: the return leg's offer id
+runtime_provides:
+  - browser_session
+  - llm

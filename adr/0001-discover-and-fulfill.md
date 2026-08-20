@@ -31,20 +31,46 @@ approval and payment machinery, same registry. The platform is not split.
    A later protocol version may admit a direct target (a URL, a supplier
    reference) for fulfill-only recipes.
 
-A recipe declares what it implements in the manifest:
+A recipe declares what it implements in the manifest, each task
+referencing a **versioned input contract** defined in `schemas/input/`
+rather than restating fields and types inline:
 
 ```yaml
 capabilities:
-  discover: true          # search + offer-details produce normalized offers
-  fulfill:
-    inputs: [offer_ref]   # what a book target may be; later: url
+  search:
+    input_schema: air-search.v1
+  offer-details:
+    input_schema: air-offer-details.v1
+  book:
+    input_schema: air-book.v1
+    accepts: [offer_ref]   # what a book target may be; later: url
 ```
 
-**Absence of the field means the current behavior** —
-`discover: true`, `fulfill.inputs: [offer_ref]` — so every existing
-manifest stays valid. The field is descriptive in protocol 1: the runtime
-does not yet route on it. Declaring it now is what lets routing use it
-later without a migration.
+The schema names the PUBLIC fields (`offer_ref`, `passengers`,
+`price_cap`…); the transport env a recipe reads (`FLIGHT`, `PAX_LIST`…)
+is an implementation detail between runner and recipe and never part of
+the public contract — the runner translates. Each schema also lists
+`runtime_provides`: what the runtime injects (contact email, payment
+method, approval and OTP relays, browser session, LLM). **These are
+never free inputs an author may declare** — card data, keys and human
+verdicts stay controlled by the runtime.
+
+A later fulfill-only recipe declares only its half:
+
+```yaml
+capabilities:
+  book:
+    input_schema: commerce-buy-url.v1
+    accepts: [url]
+```
+
+**Absence of the field means the current behavior** — the three air.v1
+schemas with `accepts: [offer_ref]` — so every existing manifest stays
+valid. The field is descriptive in protocol 1: the runtime does not yet
+route or validate on it (one reference per task is enough for launch; a
+dynamic schema system is deliberately not built). Declaring it now is
+what lets request validation, agent-facing form generation and routing
+use it later without a migration.
 
 ## Rules
 
