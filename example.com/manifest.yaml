@@ -22,9 +22,13 @@ oracle:
   template: example_v1           # version label of the patterns below
   # The patterns ARE the template: the marketplace's settlement engine
   # executes them once the recipe's tier is live. YOU supply the domain
-  # knowledge (submit a real confirmation email as the sample they were
-  # written against); DKIM verification, sender alignment and the capture
+  # knowledge; DKIM verification, sender alignment and the capture
   # decision stay the marketplace's — your declaration never moves money.
+  # No sample email in hand? OMIT all three patterns (all-or-none):
+  # that is BOOTSTRAP mode — nothing settles yet, and the FIRST real
+  # confirmation (delivered to the marketplace's own order address)
+  # pages the operator, the patterns get written against the genuine
+  # article, and the booking settles retroactively inside its hold.
   issued_pattern: '(?i)ticket[s]?\s+(?:have|has)\s+been\s+issued'
   pnr_pattern: '(?i)Booking\s+Reference\s*:\s*([A-Z0-9]{5,8})'   # group 1 = the PNR
   cancelled_subject_pattern: '(?i)\b(cancel(?:led|ed)?|refund(?:ed)?|failed)\b' 
