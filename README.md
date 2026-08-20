@@ -193,9 +193,13 @@ Use the SDK emitters; the shapes below are what the runtime parses.
 | `4` | could not reach the checkout |
 | `5` | round-trip return selection failed |
 | `6` | passenger form rejected — stop, never hammer |
+| `7` | `EXIT.uncertain` (alias `EXIT.malformed`) — the run's claims cannot be trusted: a result that violates the schema, or **any unconfirmed outcome after the Pay click** (exception, 3-D Secure timeout, no readable confirmation/reference) |
 
 Any nonzero exit **before Pay** is a clean failure. The runtime decides
-refund vs uncertain from `payClicked`, never from the exit code alone.
+refund vs uncertain from `payClicked`, never from the exit code alone —
+but after Pay, exiting `EXIT.uncertain` is what states plainly that a
+human must resolve the order: never exit a clean-failure code (or `ok`
+without a supplier reference) once Pay was clicked.
 
 ### 2.10 Screenshots
 

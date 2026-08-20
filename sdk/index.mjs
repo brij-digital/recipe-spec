@@ -38,6 +38,11 @@ export const EXIT = {
   returnFail: 5,   // round-trip return selection failed
   paxRejected: 6,  // passenger form rejected — stop, never hammer
   malformed: 7,    // the recipe built a result that violates the schema — the SDK refused to emit it
+  uncertain: 7,    // alias of 7 — money may have moved and nothing confirms it: use for EVERY
+                   // unconfirmed outcome after the Pay click (exception, 3DS timeout, unreadable
+                   // confirmation). The runtime freezes 7-after-payClicked for a human; it never
+                   // auto-refunds it. Same number as malformed on purpose: both mean "do not
+                   // trust this run's claims".
 };
 
 // ── protocol version ──
