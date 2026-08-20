@@ -4,6 +4,11 @@ protocol_version: 1
 domain: example.com
 recipe: recipe.mjs
 
+capabilities:                    # what this recipe implements (adr/0001); absent = this default
+  discover: true                 # search + offer-details produce normalized offers
+  fulfill:
+    inputs: [offer_ref]          # book targets an offer from this recipe's own discovery
+
 flow: guest                      # no account, no login — the target family
 kind: browser                    # browser | api (a connector speaks the same signals)
 

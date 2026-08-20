@@ -236,6 +236,7 @@ One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com
 | `domain` | the supplier host |
 | `protocol_version` | the SDK/signal protocol the recipe speaks (current: `1`); the runtime refuses versions it does not support and treats a signal `v` that contradicts the manifest as malformed |
 | `recipe` | entry file |
+| `capabilities` | which primitives the recipe implements — `discover` (search/offer-details) and/or `fulfill` with its accepted `inputs` ([ADR 0001](adr/0001-discover-and-fulfill.md)); absent = `discover: true`, `fulfill.inputs: [offer_ref]` (the current behavior). Descriptive in protocol 1 |
 | `flow` | `guest` · `ephemeral-account` · `account` (expensive, avoid) |
 | `kind` | `browser` (this contract) · `api` (a connector — same signals, no browser) |
 | `oracle` | `type: email` + `sender_domains` (DKIM) + `template` — how the marketplace recognizes "ticket issued" |
