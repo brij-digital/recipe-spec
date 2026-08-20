@@ -182,6 +182,11 @@ Use the SDK emitters; the shapes below are what the runtime parses.
 - `paymentStatus` = your honest read of the completion page: `paid` ·
   `failed` · `unverified`. Informational only.
 
+`__FULFILLER_PHASE__` (SDK `emitPhase("select")`) marks timeline steps —
+the runtime parses them into the run's evidence (`phases[]`, and
+`failure_phase` = the last phase entered before a failing exit). Optional
+but cheap; the structured failure reason authors iterate fastest on.
+
 ### 2.9 Exit codes (`EXIT` in the SDK)
 
 | Code | Meaning |

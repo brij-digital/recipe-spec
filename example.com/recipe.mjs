@@ -12,7 +12,7 @@
 //   TASK=book PURCHASE_MODE=dry FLIGHT="..." PAX_GIVEN=Jean PAX_SURNAME=Martin node example.com/recipe.mjs
 //   TASK=book PURCHASE_MODE=approve ... APPROVE_SIGNAL_FILE=/tmp/verdict node example.com/recipe.mjs
 //     (then: echo APPROVE > /tmp/verdict — that is the runtime's gate, simulated by hand)
-import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitSession,
+import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitSession, emitPhase,
   makeBail, waitApproval, waitOTP, EXIT } from "../sdk/index.mjs";
 
 // ── the job, read from the environment (§2 of the README) ──
@@ -50,6 +50,7 @@ const pretendSupplier={
 // ── TASK=search: FIRM offers only — a price you would not honor at book
 //    must not be emitted here ──
 if(TASK==="search"){
+  emitPhase("search"); // timeline step — parsed into the evidence (README §2.8)
   const offers=pretendSupplier.offers.slice().sort((a,b)=>a.price-b.price);
   L(`search ${DCITY}->${ACITY} ${DDATE}: ${offers.length} firm offers`);
   emitResult("search", { route:`${DCITY}->${ACITY}`, ddate:DDATE, tripType:"ow", count:offers.length, offers });
@@ -64,6 +65,7 @@ const resolve=()=>pretendSupplier.offers.find(o=>o.id===FLIGHT);
 
 // ── TASK=offer-details: one offer's fare menu, live-read ──
 if(TASK==="offer-details"){
+  emitPhase("fare-menu");
   if(!FLIGHT) await bail(EXIT.badInput,"offer-details requires FLIGHT=<id> (from search)");
   const f=resolve();
   if(!f) await bail(EXIT.offerGone,`offer not found (no longer available?): ${FLIGHT}`);
@@ -75,6 +77,7 @@ if(TASK==="offer-details"){
 }
 
 // ── TASK=book: select → passenger → checkout → (gate) → pay → outcome ──
+emitPhase("select");
 if(!FLIGHT) await bail(EXIT.badInput,"book requires FLIGHT=<id> (from search)");
 const f=resolve();
 if(!f) await bail(EXIT.offerGone,`offer not found: ${FLIGHT}`);

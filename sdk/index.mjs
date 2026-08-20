@@ -25,6 +25,7 @@ export const MARKERS = {
   approval: "__FULFILLER_APPROVAL__", // parked at the checkout, waiting for a verdict
   threeDS: "__FULFILLER_3DS__",       // waiting for an SCA code
   session: "__FULFILLER_SESSION__",   // reusable Browserbase session id
+  phase: "__FULFILLER_PHASE__",       // timeline step (emitPhase) — powers the evidence timeline
 };
 
 // ── exit codes (README §2.9). Any nonzero exit BEFORE Pay is a clean failure;
@@ -130,6 +131,12 @@ export const emitResult = (task, payload) => {
 export const emitApproval = obj => console.log(MARKERS.approval + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "approval" }));
 export const emit3DS = obj => console.log(MARKERS.threeDS + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "3ds" }));
 export const emitSession = id => { if (id) console.log(MARKERS.session + id); };
+// emitPhase marks a step of the run ("search", "select", "passenger-form",
+// "cashier"…). The runtime parses these into the evidence timeline; the last
+// phase before a failing exit becomes the structured failure_phase an author
+// (or an agent) iterates on. Cheap, honest, worth sprinkling.
+const PHASE_T0 = Date.now();
+export const emitPhase = name => { if (name) console.log(MARKERS.phase + JSON.stringify({ phase: String(name), at: Date.now() - PHASE_T0, v: PROTOCOL_VERSION })); };
 
 // ── screenshot evidence ──
 // approvalShots: ABSOLUTE paths collected for the approval/3DS requests (the runner reads these files).
