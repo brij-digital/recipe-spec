@@ -17,3 +17,27 @@ for (const c of corpus.cases) {
 }
 if (failed) { console.log(`${failed} FAILED`); process.exit(1); }
 console.log("ALL PASS");
+
+// ── manifest ↔ input-contract consistency ──
+// Every capabilities entry must reference a schema that EXISTS in
+// schemas/input/ and whose declared task matches the manifest key.
+{
+  const fs = await import("node:fs");
+  const assert = (cond, msg) => { if (!cond) { console.log("manifest↔schema FAILED: " + msg); process.exit(1); } };
+  const manifest = fs.readFileSync(new URL("./example.com/manifest.yaml", import.meta.url), "utf8");
+  const capBlock = manifest.match(/^capabilities:[^\n]*\n((?:[ \t]+[^\n]*\n?)+)/m)?.[1] || "";
+  const refs = []; let task = null;
+  for (const line of capBlock.split("\n")) {
+    const t = line.match(/^ {2}([A-Za-z-]+):/); if (t) { task = t[1]; continue; }
+    const sch = line.match(/^\s+input_schema:\s*(\S+)/); if (sch && task) refs.push([task, sch[1]]);
+  }
+  assert(refs.length >= 3, "example manifest declares no input_schema refs");
+  for (const [t, name] of refs) {
+    const path = new URL(`./schemas/input/${name}.yaml`, import.meta.url);
+    assert(fs.existsSync(path), `schemas/input/${name}.yaml missing (referenced by ${t})`);
+    const doc = fs.readFileSync(path, "utf8");
+    assert(new RegExp(`^schema: ${name}$`, "m").test(doc), `${name}.yaml: schema field mismatch`);
+    assert(new RegExp(`^task: ${t}$`, "m").test(doc), `${name}.yaml declares a different task than '${t}'`);
+  }
+  console.log(`manifest↔schema: ${refs.length} references verified`);
+}

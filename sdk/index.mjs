@@ -311,10 +311,16 @@ export const runtimeModel = ({ modelName = process.env.SH_MODEL || "anthropic/cl
 export const captureJSON = async (cdpUrl, routes, { log = () => {} } = {}) => {
   const { chromium } = await import("playwright");
   const browser = await chromium.connectOverCDP(cdpUrl);
-  const map = {}, hits = {};
-  for (const name of Object.keys(routes)) { map[name] = {}; hits[name] = 0; }
+  const map = {}, hits = {}, seqs = {};
+  for (const name of Object.keys(routes)) { map[name] = {}; hits[name] = 0; seqs[name] = {}; }
+  let seq = 0; // response ARRIVAL order, taken synchronously below
   const matches = (m, url) => m instanceof RegExp ? m.test(url) : typeof m === "function" ? !!m(url) : url.includes(String(m));
   const onResponse = async (res) => {
+    // The sequence is claimed BEFORE any await: event order = arrival
+    // order, while res.json() below resolves in whatever order the wire
+    // pleases — without this, an old slow response could overwrite a
+    // newer one after the fact.
+    const mySeq = ++seq;
     const url = res.url();
     for (const [name, r] of Object.entries(routes)) {
       if (!matches(r.match, url)) continue;
@@ -324,7 +330,8 @@ export const captureJSON = async (cdpUrl, routes, { log = () => {} } = {}) => {
       let v; try { v = r.parse ? r.parse(json, url) : json; } catch { continue; }
       const old = map[name][String(k)];
       if (old !== undefined && r.keep && !r.keep(old, v)) { log(`[net] ${name}[${k}]: kept the earlier payload`); continue; }
-      map[name][String(k)] = v; hits[name]++;
+      if (old !== undefined && !r.keep && (seqs[name][String(k)] ?? 0) > mySeq) { log(`[net] ${name}[${k}]: stale response ignored`); continue; }
+      map[name][String(k)] = v; seqs[name][String(k)] = mySeq; hits[name]++;
       log(`[net] ${name}[${k}] captured`);
     }
   };
