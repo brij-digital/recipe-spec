@@ -136,7 +136,7 @@ same locally.
 | `BB=1` | run on the marketplace's remote browser (headless, proxies, captcha solving) |
 | `BB_CONNECT_URL` `BB_SESSION_ID` | **trusted-runner session**: the runtime creates the browser session and passes its connect URL — your process holds no browser-platform key for search/details |
 | `BB_PROXY_COUNTRY` | proxy geo pin — **suppliers serve different inventory per geo**; one order's search, details and book must share it |
-| `ANTHROPIC_API_KEY` | model access for the few steps that need model-driven actions (card iframes, Pay); provided on `book` only, scoped and budgeted |
+| `LLM_PROXY_URL` + `LLM_RUN_TOKEN` | model access for the few steps that need model-driven actions (card iframes, Pay) — a per-run, budget-capped token against the runtime's own proxy, provided on `book` only. No raw provider key ever reaches a recipe; the SDK's `runtimeModel()` wires it into Stagehand |
 | `FROM` `STOP` `KEEP` `FRESH` `ONLY` | developer controls — not used in production |
 
 ### 2.7-bis Reading the supplier's JSON (`captureJSON`)
