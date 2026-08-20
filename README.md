@@ -248,7 +248,7 @@ One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com
 | `capabilities` | which tasks the recipe implements, each referencing a versioned input contract from [`schemas/input/`](schemas/input/) (`input_schema: air-book.v1`, plus `accepts` for book targets) — public field names, never transport env ([ADR 0001](adr/0001-discover-and-fulfill.md)); absent = all three air.v1 schemas with `accepts: [offer_ref]` (the current behavior). Descriptive in protocol 1 |
 | `flow` | `guest` · `ephemeral-account` · `account` (expensive, avoid) |
 | `kind` | `browser` (this contract) · `api` (a connector — same signals, no browser) |
-| `oracle` | `type: email` + `sender_domains` (DKIM) + `template` — how the marketplace recognizes "ticket issued" |
+| `oracle` | `type: email` + `sender_domains` (DKIM) + `template` (version label) + `issued_pattern` / `pnr_pattern` (group 1 = PNR) / `cancelled_subject_pattern` — the AUTHOR supplies the patterns, the marketplace's engine executes them; DKIM verification and the capture decision are never the recipe's |
 | `coverage` | regions / cabins actually handled — bounds the search fan-out |
 | `proxy_country` | inventory-per-geo pin |
 | `budgets` | `search_s`, `book_s`, browser minutes — enforced |

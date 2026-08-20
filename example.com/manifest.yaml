@@ -19,7 +19,15 @@ kind: browser                    # browser | api (a connector speaks the same si
 oracle:
   type: email                    # settlement truth = the supplier's confirmation email
   sender_domains: [example.com]  # DKIM-verified sender
-  template: example_v1           # how "ticket issued" / "cancelled" are recognized
+  template: example_v1           # version label of the patterns below
+  # The patterns ARE the template: the marketplace's settlement engine
+  # executes them once the recipe's tier is live. YOU supply the domain
+  # knowledge (submit a real confirmation email as the sample they were
+  # written against); DKIM verification, sender alignment and the capture
+  # decision stay the marketplace's — your declaration never moves money.
+  issued_pattern: '(?i)ticket[s]?\s+(?:have|has)\s+been\s+issued'
+  pnr_pattern: '(?i)Booking\s+Reference\s*:\s*([A-Z0-9]{5,8})'   # group 1 = the PNR
+  cancelled_subject_pattern: '(?i)\b(cancel(?:led|ed)?|refund(?:ed)?|failed)\b' 
 
 coverage:                        # bounds the search fan-out — quote only what you can book
   regions: [EU]
