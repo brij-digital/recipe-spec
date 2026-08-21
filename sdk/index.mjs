@@ -415,6 +415,11 @@ export const connectLocalBrowser = async ({ needsBrowser = false } = {}) => {
     return { browser, sessionId: "local", connectUrl: cdpUrl };
   }
   // 0-LLM tasks: a bare Playwright Chromium exposing CDP on the same port.
+  // FRESH=0 reuses whatever is already listening here too — not paying for a
+  // cold browser on every iteration is the whole point of the flag, and it
+  // used to apply only to the Stagehand branch. Nothing is returned to close:
+  // a browser this call did not start is not its to end.
+  if (!fresh && (await alive())) return { browser: null, sessionId: "local", connectUrl: cdpUrl };
   const { chromium } = await import("playwright");
   const launched = await chromium.launch({
     headless,
