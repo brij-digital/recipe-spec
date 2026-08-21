@@ -245,17 +245,21 @@ export const waitOTP = async ({ file, timeoutS }) => {
 //
 // The code goes into the page and nowhere else — never logged, never cached.
 //
+// There is no second path on purpose. The obvious one — Stagehand's act() —
+// is the thing that already fails here, so it would be a rescue that does not
+// rescue: a branch nobody exercises, in the one place where being wrong costs
+// a charged card and a frozen order. A code that does not clear the challenge
+// is reported as such, and a human resolves it.
+//
 //   cdp             the parallel Playwright browser (connectOverCDP)
 //   code            the one-time code
 //   stillChallenged optional () => Promise<boolean>, the recipe's own
 //                   detection; used to stop as soon as the challenge is gone
-//   fallback        optional async (attempt) => void, e.g. an act() pass for
-//                   a challenge rendered where CDP cannot reach
 //   attempts        how many times to try (default 3)
 //
 // Returns true once the challenge is gone (or the code was accepted and no
 // detection was supplied), false if it never left.
-export const submit3DSCode = async ({ cdp, code, stillChallenged, fallback, attempts = 3, log = L }) => {
+export const submit3DSCode = async ({ cdp, code, stillChallenged, attempts = 3, log = L }) => {
   const lastPage = () => {
     try { const ps = cdp.contexts().flatMap(c => c.pages()); return ps[ps.length - 1] || null; }
     catch { return null; }
@@ -310,11 +314,6 @@ export const submit3DSCode = async ({ cdp, code, stillChallenged, fallback, atte
       if (!(await stillChallenged())) { log("  [3DS] validated (left the challenge)"); return true; }
     } else if (filled) {
       return true;
-    }
-    if (!filled && fallback) {
-      await fallback(attempt);
-      await sleep(3000);
-      if (stillChallenged && !(await stillChallenged())) { log("  [3DS] validated (fallback)"); return true; }
     }
     log(`  [3DS] still on the challenge (attempt ${attempt})`);
   }
