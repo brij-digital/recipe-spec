@@ -168,6 +168,16 @@ export const makeSnap = getPage => async name => {
   try { return await save({ fullPage: true }); } catch { try { return await save({}); } catch { return null; } }
 };
 
+// shot(getPage) is makeSnap's cheap twin: no fullPage retry, no approval
+// bookkeeping, and it swallows its own failure — a debugging aid must never
+// take a run down. Both recipes had reimplemented exactly this, which was the
+// last reason author code imported `fs`.
+export const makeShot = (getPage, { skip = () => false } = {}) => async name => {
+  if (skip()) return null;
+  const p = name.endsWith(".png") ? name : name + ".png";
+  try { fs.writeFileSync(p, await getPage().screenshot()); return p; } catch { return null; }
+};
+
 // ── clean exit ──
 // makeBail({shot, cleanup}): narrate, capture the failure, run the recipe's cleanup (close the
 // browser session…), FLUSH stdout, exit. shot is the recipe's cheap screenshot helper (may be a
@@ -320,6 +330,58 @@ export const runtimeModel = ({ modelName = process.env.SH_MODEL || "anthropic/cl
 // the recipe. cdpUrl is the Browserbase connect URL (BB_CONNECT_URL) or the
 // local http://127.0.0.1:<port>. playwright is imported lazily so the toy
 // recipe and the validators stay dependency-free.
+// ── the browser, for local development ────────────────────────────────────
+// The production path is connectRuntimeBrowser below. This is the other one:
+// a Chromium on your own machine, so an author can iterate without the
+// marketplace. It lives here rather than in each recipe because it is the
+// same code every time, it is the only reason a recipe ever touched `fs` or
+// `fetch`, and every knob it reads (CDP_PORT, HEADLESS, KEEP, FRESH) is a
+// developer's, not a supplier's.
+//
+// Keeping it out of recipe files is what lets the lint rules that matter —
+// no filesystem, no direct network, no dynamic env access — apply to author
+// code without exceptions carved for a path production never runs.
+//
+// Returns the same shape as connectRuntimeBrowser: { browser, sessionId,
+// connectUrl }. browser is a Stagehand handle when needsBrowser is set (book
+// and any flow that needs act()/extract()), null otherwise — the caller then
+// drives Playwright over the returned connectUrl.
+export const connectLocalBrowser = async ({ needsBrowser = false } = {}) => {
+  const port = Number(process.env.CDP_PORT || 9222);
+  const cdpUrl = `http://127.0.0.1:${port}`;
+  const fresh = process.env.FRESH !== "0";
+  const headless = process.env.HEADLESS !== "0";
+  const keepAlive = process.env.KEEP !== "0";
+  const profile = "./chrome-profile";
+  const alive = async () => {
+    try {
+      const r = await fetch(`${cdpUrl}/json/version`, { signal: AbortSignal.timeout(1500) });
+      return r.ok;
+    } catch { return false; }
+  };
+  if (fresh) { try { fs.rmSync(profile, { recursive: true, force: true }); } catch {} }
+  let browser = null;
+  if (needsBrowser) {
+    const { localBrowser } = await import("@browserbasehq/stagehand");
+    browser = !fresh && (await alive())
+      ? await localBrowser.connect({ cdpUrl })
+      : (fs.mkdirSync(profile, { recursive: true }), await localBrowser.launch({
+          headless, viewport: { width: 1400, height: 900 }, port,
+          userDataDir: profile, preserveUserDataDir: true, keepAlive,
+        }));
+    return { browser, sessionId: "local", connectUrl: cdpUrl };
+  }
+  // 0-LLM tasks: a bare Playwright Chromium exposing CDP on the same port.
+  const { chromium } = await import("playwright");
+  const launched = await chromium.launch({
+    headless,
+    args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", `--remote-debugging-port=${port}`],
+  });
+  const up = await until(alive, 8000, 200);
+  if (!up) { await launched.close().catch(() => {}); throw new Error(`local CDP port ${port} did not come up`); }
+  return { browser: null, sessionId: "local", connectUrl: cdpUrl, launched };
+};
+
 // ── the browser, obtained from the runtime ────────────────────────────────
 // A recipe does not create browser sessions. The marketplace's trusted runner
 // does: it holds the Browserbase key, picks the proxy geo, the region, the
