@@ -7,24 +7,47 @@
 // browsing (Stagehand/Playwright on the runtime-provided session); the
 // contract around it — env in, signals out, exit codes — stays exactly this.
 //
-//   TASK=search DCITY=ibz ACITY=mad DDATE=20261203 node example.com/recipe.mjs
-//   TASK=offer-details FLIGHT="2026-12-03T09:05|2026-12-03T10:20|EX" node example.com/recipe.mjs
-//   TASK=book PURCHASE_MODE=dry FLIGHT="..." PAX_GIVEN=Jean PAX_SURNAME=Martin node example.com/recipe.mjs
-//   TASK=book PURCHASE_MODE=approve ... APPROVE_SIGNAL_FILE=/tmp/verdict node example.com/recipe.mjs
-//     (then: echo APPROVE > /tmp/verdict — that is the runtime's gate, simulated by hand)
+//   TASK=search RECIPE_INPUT='{"schema":"air-search.v1","task":"search","data":{
+//     "origin_iata":"IBZ","destination_iata":"MAD","depart_date":"2026-12-03"}}' node example.com/recipe.mjs
+//
+//   TASK=offer-details RECIPE_INPUT='{"schema":"air-offer-details.v1","task":"offer-details","data":{
+//     "origin_iata":"IBZ","destination_iata":"MAD","depart_date":"2026-12-03",
+//     "flight":"2026-12-03T09:05|2026-12-03T10:20|EX"}}' node example.com/recipe.mjs
+//
+//   TASK=book PURCHASE_MODE=dry RECIPE_INPUT='{"schema":"air-book.v1","task":"book","data":{
+//     "origin_iata":"IBZ","destination_iata":"MAD","depart_date":"2026-12-03",
+//     "flight":"2026-12-03T09:05|2026-12-03T10:20|EX",
+//     "passengers":[{"given":"Jean","surname":"Martin","dob":"1979-10-25"}],
+//     "contact_email":"o-abc123@bookings.brij.fi"}}' node example.com/recipe.mjs
+//
+//   Add PURCHASE_MODE=approve APPROVE_SIGNAL_FILE=/tmp/verdict to watch the gate,
+//   then: echo APPROVE > /tmp/verdict — the runtime's verdict, written by hand.
 import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitSession, emitPhase,
   makeBail, waitApproval, waitOTP, EXIT } from "../sdk/index.mjs";
 
-// ── the job, read from the environment (§2 of the README) ──
+// ── the job: ONE document, no fallback (§2.1 of the README) ──
+// The environment says how to run; RECIPE_INPUT says what to do. Notice there
+// is no `||default` on a single field below: a value the runtime did not send
+// is a refusal, because a default here is this recipe deciding what to book.
 const TASK=(process.env.TASK||"book").toLowerCase();
 const MODE=(process.env.PURCHASE_MODE||"dry").toLowerCase();
-const DCITY=(process.env.DCITY||"ibz").toLowerCase(), ACITY=(process.env.ACITY||"mad").toLowerCase();
-const DDATE=process.env.DDATE||"20261203";
-const FLIGHT=process.env.FLIGHT||"";
-const FARE_PRICE=Number(process.env.FARE_PRICE||0);
-const CAP=Number(process.env.PRICE_CAP||500);
-const CONTACT_EMAIL=process.env.CONTACT_EMAIL||"";   // the ORACLE address — a real recipe gives the supplier exactly this
-const PAX={ given:process.env.PAX_GIVEN||"Jean", surname:process.env.PAX_SURNAME||"Martin" };
+const IN=(()=>{
+  const raw=process.env.RECIPE_INPUT;
+  if(!raw){ L("ABORT: RECIPE_INPUT is required — this recipe has no environment fallback"); process.exit(EXIT.badInput); }
+  let doc; try{ doc=JSON.parse(raw); }catch(e){ L("ABORT: RECIPE_INPUT is not JSON: "+e.message); process.exit(EXIT.badInput); }
+  const want={ search:"air-search.v1", "offer-details":"air-offer-details.v1", book:"air-book.v1" }[TASK];
+  if(!want){ L(`ABORT: unknown TASK ${TASK}`); process.exit(EXIT.badInput); }
+  if(doc.schema!==want){ L(`ABORT: RECIPE_INPUT declares ${doc.schema}, TASK=${TASK} speaks ${want}`); process.exit(EXIT.badInput); }
+  return doc.data||{};
+})();
+// Canonical in, supplier dialect out: the document is ISO + upper-case IATA,
+// and this pretend supplier happens to want a compact date, so convert here.
+const DCITY=String(IN.origin_iata||"").toLowerCase(), ACITY=String(IN.destination_iata||"").toLowerCase();
+const DDATE=String(IN.depart_date||"").replace(/-/g,"");
+const FLIGHT=IN.flight||"";
+const FARE_PRICE=Number(IN.fare_price||0);
+const CONTACT_EMAIL=IN.contact_email||"";   // the ORACLE address — give the supplier exactly this
+const PAX=(IN.passengers||[])[0]||null;     // position 0 is the lead
 
 // bail: narrate, clean up, flush stdout, exit with a contract code. A real
 // recipe closes its browser session in the cleanup hook.
@@ -93,13 +116,17 @@ if(!fare) await bail(EXIT.offerGone,`fare at $${FARE_PRICE} not in the live menu
 // trusts to tell refund from uncertain.
 const bookOutcome={ task:"book", mode:MODE, payClicked:false, total:null, reason:"", reference:"", paymentStatus:"unverified" };
 
+if(!PAX){ await bail(EXIT.badInput,"book with no passengers in the input document"); }
 L(`passenger: ${PAX.given} ${PAX.surname}`);
 if(CONTACT_EMAIL) L(`contact email given to the supplier: ${CONTACT_EMAIL} (the oracle address — principle 1)`);
 await sleep(300);   // pretend: form filling
 const total=fare.price;
 bookOutcome.total=total;
-L(`checkout total: $${total} (cap $${CAP})`);
-if(total>CAP){ bookOutcome.reason="over cap"; await bail(EXIT.offerGone,`total $${total} exceeds PRICE_CAP $${CAP} — refusing`); }
+// No ceiling is passed to you (§2.4): report the total honestly and the gate
+// compares it to what the customer engaged. What you DO owe is a total you
+// actually read — the gate cannot judge a number it never received.
+L(`checkout total: $${total} USD`);
+if(!(total>0)){ bookOutcome.reason="no readable cashier total"; await bail(EXIT.offerGone,"no readable checkout total — refusing"); }
 
 // dry: the walk proves the flow; the card was never even in our env.
 if(MODE==="dry"){
@@ -114,7 +141,7 @@ if(MODE==="dry"){
 if(MODE==="approve"){
   emitApproval({ task:"book-approve", sessionId:"toy", total, currency:"USD", flight:FLIGHT, returnFlight:null,
     fare:fare.brand, itinerary:`${f.airline} ${f.departISO}→${f.arriveISO}`, lead:`${PAX.given} ${PAX.surname}`,
-    pax:1, cap:CAP, screenshots:[] });
+    pax:1, screenshots:[] });
   const verdict=await waitApproval({ file:process.env.APPROVE_SIGNAL_FILE||"", timeoutS:Number(process.env.APPROVE_TIMEOUT_S||480) });
   if(verdict!=="APPROVE"){ bookOutcome.reason=`approval ${verdict}`; await bail(EXIT.offerGone,`human gate: ${verdict} — no Pay`); }
   L("approval received → paying");

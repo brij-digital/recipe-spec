@@ -1,20 +1,41 @@
-# air-book.v1 — the PUBLIC input contract of a fulfill(offer_ref) purchase.
+# air-book.v1 — the PUBLIC input contract of a purchase.
+# Transport: the RECIPE_INPUT document (see air-search.v1).
+#
 # Card data, keys, OTP and approval are NEVER free inputs an author may
 # declare: they are runtime_provides, controlled and injected by the
 # marketplace's runtime (ADR 0001 — no fulfill without a settlement oracle).
+#
+# NO PRICE CEILING is passed. A cap re-implemented by every recipe is a cap
+# every recipe can get wrong, and one of them did. The marketplace compares
+# the cashier total you report against what the customer engaged, at the
+# approval gate, before the card is touched. What you owe it is an honest
+# total and an honest currency — see the result contract.
 schema: air-book.v1
 task: book
 required:
-  - offer_ref         # the offer being bought, from this recipe's discovery
-  - passengers        # full pax list (names, DOB, documents as coverage requires)
-  - price_cap         # the escrowed amount — never pay above it
+  - origin_iata
+  - destination_iata
+  - depart_date       # YYYY-MM-DD
+  - flight            # the offer being bought, from this recipe's discovery
+  - passengers        # ordered; position 0 is the LEAD (the name refunds match)
+                      # each: {given, surname, dob} + optional
+                      # {gender, nationality, idnum, idexp}
+                      # dob and idexp are ISO (YYYY-MM-DD); gender is the raw
+                      # API code (m/f), never a supplier's form label
+  - contact_email     # the order's oracle address (o-<id>@bookings.brij.fi):
+                      # give it to the supplier as the booking contact, or the
+                      # confirmation never reaches settlement and nothing captures
 optional:
-  - return_offer_ref
-  - fare_ref          # the chosen brand from offer-details (price re-verified live)
-  - contact_phone
+  - return_date       # YYYY-MM-DD
+  - return_flight
+  - fare_index        # the chosen brand's index from offer-details
+  - fare_price        # that brand's expected supplier price — the fare's real
+                      # identity. Resolve against the LIVE menu; the index is
+                      # only a tiebreak among equal prices, because suppliers
+                      # reorder menus between drill-down and purchase
+  - contact_phone     # E.164, "+<dial><national>"
 runtime_provides:
-  - contact_email     # the order's oracle address (o-<id>@bookings.brij.fi)
-  - payment_method    # card fields, real/approve/dry gating
+  - payment_method    # card fields, injected only in a paying mode
   - approval          # human gate verdict (signal file)
   - otp               # 3-D Secure code relay (signal file)
   - browser_session

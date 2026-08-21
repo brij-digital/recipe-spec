@@ -1,10 +1,15 @@
 # air-offer-details.v1 — the PUBLIC input contract of the fare drill-down.
+# Transport: the RECIPE_INPUT document (see air-search.v1).
 schema: air-offer-details.v1
 task: offer-details
 required:
-  - offer_ref         # an offer id this same recipe's search produced
+  - origin_iata       # the originating search is replayed, so it travels too
+  - destination_iata
+  - depart_date       # YYYY-MM-DD
+  - flight            # an offer id THIS recipe's own search produced
 optional:
-  - return_offer_ref  # round-trip: the return leg's offer id
+  - return_date       # YYYY-MM-DD
+  - return_flight     # round-trip: the return leg's offer id
 runtime_provides:
   - browser_session
   - llm

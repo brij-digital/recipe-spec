@@ -63,46 +63,73 @@ No git, no fork, no PR: the submission API is the front door.
 
 ## 2. The contract — what every recipe speaks
 
-A recipe is a process (today: `node recipe.mjs`) that reads its job from the
-**environment**, does its work, prints **signals** on stdout, and **exits
-with a code**. The toy recipe demonstrates all of it.
+A recipe is a process (today: `node recipe.mjs`) that reads its job from **one
+JSON document**, does its work, prints **signals** on stdout, and **exits with
+a code**. The toy recipe demonstrates all of it.
 
-### 2.1 Task selection
+### 2.1 The job: `RECIPE_INPUT`
+
+Everything about WHAT to do arrives in a single environment variable,
+`RECIPE_INPUT`, holding `{schema, task, data}`:
+
+```json
+{"schema":"air-book.v1","task":"book","data":{
+  "origin_iata":"MAD","destination_iata":"IBZ","depart_date":"2026-11-07",
+  "flight":"2026-11-07T20:35|2026-11-07T21:55|FR",
+  "passengers":[{"given":"Jean","surname":"Martin","dob":"1979-10-25"}],
+  "contact_email":"o-abc123@bookings.brij.fi"}}
+```
+
+**There is no per-field fallback.** No `DCITY`, no `DDATE`, no `PAX_LIST`, no
+`PRICE_CAP`. A missing document, or one declaring a schema your recipe does
+not speak, is a refusal — exit `EXIT.badInput`, never a default. Defaults are
+how a recipe books a passenger nobody named, on a date nobody chose.
+
+The marketplace validates the document before your process starts, so a field
+it owes you is its bug, not yours. What arrives is complete or nothing does.
+
+Field by field: [`schemas/input/`](schemas/input/) — `air-search.v1`,
+`air-offer-details.v1`, `air-book.v1`. A manifest names the one each task
+speaks (`capabilities.<task>.input_schema`).
+
+**Values are canonical.** Dates are ISO `YYYY-MM-DD` — including passenger
+`dob` and `idexp`. IATA codes are upper-case. Gender is the raw API code
+(`m`/`f`), not a supplier's form label. If your supplier's URLs or forms want
+something else, convert at your own door: that dialect is yours, not the
+contract's.
+
+### 2.2 Task selection
 
 | Env | Values | Meaning |
 |---|---|---|
-| `TASK` | `search` · `offer-details` · `book` (default `book`) | which job |
-| `PURCHASE_MODE` | `dry` (default) · `approve` · `real` | `dry` walks to the checkout and **stops before Pay**; `approve` parks at the checkout and waits for a verdict; `real` pays |
+| `TASK` | `search` · `offer-details` · `book` (default `book`) | which job — must match the document's `task` |
+| `PURCHASE_MODE` | `dry` (default) · `approve` | `dry` walks to the checkout and **stops before Pay**, and receives no card at all; `approve` parks at the checkout and waits for a human verdict before touching the card |
 
-### 2.2 Search criteria (all tasks)
+`real` — pay with no gate — **no longer exists**. It differed from `approve`
+only by who answers the gate, and that answerer is becoming an assistant
+rather than a person; a separate ungated mode would be a path that skips the
+gate exactly when the gate gets cheap.
 
-| Env | Example | Notes |
-|---|---|---|
-| `DCITY` `ACITY` | `ibz` `mad` | IATA, case-insensitive |
-| `DDATE` | `20261203` | `YYYYMMDD` |
-| `RDATE` | `20261210` | present ⇒ round trip |
-| `CLASS` | `y` `s` `c` `f` | economy · premium · business · first |
-| `ADULT` `CHILD` `INFANT` | `1` `0` `0` | counts |
-| `TOPK` | `5` | round trip: how many outbounds to expand into firm return combos |
+### 2.3 Prices: USD, and say so
 
-### 2.3 Offer selection (`offer-details`, `book`)
+The marketplace settles in USD and **converts nothing**. Every price you
+report — search offers, fare menus, the cashier total — must carry
+`currency: "USD"`, and a missing currency is refused as loudly as a wrong one:
+a price without one is not "probably dollars", it is a price nobody checked.
 
-| Env | Meaning |
-|---|---|
-| `FLIGHT` | the outbound offer **id from `search`** (times + airline; times are the identity) |
-| `RETURN_FLIGHT` | the return offer id (round trip) |
-| `FARE_PRICE` | the fare to book, **by price** (resolved against the live fare menu at purchase — never by index) |
-| `FARE` | legacy index; tiebreak only |
-| `PRICE_CAP` | safety ceiling — refuse if the checkout total exceeds it |
+If your supplier prices in another currency, that is a property of the URL you
+chose, not a fact of life — Ryanair prices EUR on `/gb/en/` and USD on
+`/us/en/`. Read the currency back from the supplier rather than asserting it
+in your code: a constant in your recipe is exactly how a EUR menu gets sold as
+dollars for a day.
 
-### 2.4 Passengers & contact (`book`)
+### 2.4 The cashier total (`book`)
 
-| Env | Meaning |
-|---|---|
-| `PAX_LIST` | JSON array, **lead passenger at position 0** — `[{given, surname, dob, gender, nationality, idnum, idExp}]` |
-| `PAX_GIVEN` `PAX_SURNAME` `PAX_DOB` `PAX_GENDER` `PAX_NATIONALITY` `PAX_IDNUM` `PAX_ID_EXP` | single-passenger fallback |
-| `CONTACT_EMAIL` | **the oracle address**, injected by the runtime — give the supplier exactly this |
-| `CONTACT_PHONE` | E.164 (`+34600000000`) — split dial code / national number yourself |
+No price ceiling is passed to you. Report the checkout total honestly and the
+marketplace compares it against what the customer engaged, at the approval
+gate, before the card is touched. A total you cannot read is a refusal — the
+gate cannot judge a number it never received, and paying blind is worse than
+paying too much.
 
 ### 2.5 Payment (`book` only, provided for the duration of the run — never stored)
 
