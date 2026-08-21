@@ -330,6 +330,49 @@ export const runtimeModel = ({ modelName = process.env.SH_MODEL || "anthropic/cl
 // the recipe. cdpUrl is the Browserbase connect URL (BB_CONNECT_URL) or the
 // local http://127.0.0.1:<port>. playwright is imported lazily so the toy
 // recipe and the validators stay dependency-free.
+// ── the job, and the page ─────────────────────────────────────────────────
+// Three things every recipe needs and none of them supplier-specific, so
+// every recipe had written them twice.
+
+// The task's input document. Throws with a message worth printing — the
+// caller decides the exit code, because only it knows its own convention.
+export const readInput = task => {
+  const raw = process.env.RECIPE_INPUT;
+  if (!raw) throw new Error("RECIPE_INPUT is required — a recipe has no environment fallback");
+  let doc;
+  try { doc = JSON.parse(raw); } catch (e) { throw new Error("RECIPE_INPUT is not JSON: " + e.message); }
+  const want = { search: "air-search.v1", "offer-details": "air-offer-details.v1", book: "air-book.v1" }[task];
+  if (!want) throw new Error(`unknown TASK ${task}`);
+  if (doc.schema !== want) throw new Error(`RECIPE_INPUT declares ${doc.schema}, TASK=${task} speaks ${want}`);
+  return doc.data || {};
+};
+
+// Documents carry ISO dates; suppliers often want them compact. The
+// conversion is theirs to ask for, not the contract's to make.
+export const isoToCompact = iso => String(iso || "").replace(/-/g, "");
+
+// wrapPage: a raw Playwright page shaped to the surface a Stagehand page
+// offers, so the code shared by the LLM and 0-LLM paths calls one thing.
+//
+// The INVARIANT, pinned by the registry's page-surface test: every method a
+// recipe calls on `page` exists here. Anything missing is a latent "is not a
+// function" that fires only on the path that needs it — `scroll` crashed
+// exactly that way on a drill-down that had to reach a below-the-fold card.
+export const wrapPage = p => ({
+  goto: (u, o) => p.goto(u, o),
+  evaluate: (f, a) => p.evaluate(f, a),
+  locator: s => p.locator(s),
+  click: (x, y) => p.mouse.click(x, y),
+  // scroll(x, y, dx, dy): Stagehand's signature, through the real mouse.
+  scroll: (x, y, dx, dy) => p.mouse.move(x, y).then(() => p.mouse.wheel(dx, dy)),
+  keyPress: k => p.keyboard.press(k),
+  keyboard: { press: k => p.keyboard.press(k) },
+  type: t => p.keyboard.type(t),
+  screenshot: () => p.screenshot(),
+  url: async () => p.url(),
+  raw: p,
+});
+
 // ── the browser, for local development ────────────────────────────────────
 // The production path is connectRuntimeBrowser below. This is the other one:
 // a Chromium on your own machine, so an author can iterate without the
