@@ -103,12 +103,19 @@ contract's.
 | Env | Values | Meaning |
 |---|---|---|
 | `TASK` | `search` · `offer-details` · `book` (default `book`) | which job — must match the document's `task` |
-| `PURCHASE_MODE` | `dry` (default) · `approve` | `dry` walks to the checkout and **stops before Pay**, and receives no card at all; `approve` parks at the checkout and waits for a human verdict before touching the card |
 
-`real` — pay with no gate — **no longer exists**. It differed from `approve`
-only by who answers the gate, and that answerer is becoming an assistant
-rather than a person; a separate ungated mode would be a path that skips the
-gate exactly when the gate gets cheap.
+**There is no purchase mode.** You are not told whether this run may spend
+money; you are given what spending requires, or you are not:
+
+| You received | What it means |
+|---|---|
+| `CARD_*` **and** `APPROVE_SIGNAL_FILE` | Pay is reachable. Walk to the cashier, emit `__FULFILLER_APPROVAL__`, **wait for the verdict**, and only then enter the card. |
+| anything less | Pay is not reachable. Run the same walk with a synthetic card and stop before Pay. This is the conformance run every submission gets. |
+
+Derive it once and branch on it — `const CAN_PAY = HAS_CARD && !!APPROVE_SIGNAL_FILE` — and never
+ask "what mode am I in". A mode was a string you were asked to honour; a
+missing card is not something you can misread, ignore, or work around. Your
+code is identical either way except for the last click.
 
 ### 2.3 Prices: USD, and say so
 

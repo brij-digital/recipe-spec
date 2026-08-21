@@ -14,13 +14,13 @@
 //     "origin_iata":"IBZ","destination_iata":"MAD","depart_date":"2026-12-03",
 //     "flight":"2026-12-03T09:05|2026-12-03T10:20|EX"}}' node example.com/recipe.mjs
 //
-//   TASK=book PURCHASE_MODE=dry RECIPE_INPUT='{"schema":"air-book.v1","task":"book","data":{
+//   TASK=book RECIPE_INPUT='{"schema":"air-book.v1","task":"book","data":{
 //     "origin_iata":"IBZ","destination_iata":"MAD","depart_date":"2026-12-03",
 //     "flight":"2026-12-03T09:05|2026-12-03T10:20|EX",
 //     "passengers":[{"given":"Jean","surname":"Martin","dob":"1979-10-25"}],
 //     "contact_email":"o-abc123@bookings.brij.fi"}}' node example.com/recipe.mjs
 //
-//   Add PURCHASE_MODE=approve APPROVE_SIGNAL_FILE=/tmp/verdict to watch the gate,
+//   Add CARD_NUMBER=... CARD_EXPIRATION=MM/YY CARD_CVV=... APPROVE_SIGNAL_FILE=/tmp/verdict
 //   then: echo APPROVE > /tmp/verdict — the runtime's verdict, written by hand.
 import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitSession, emitPhase,
   makeBail, waitApproval, waitOTP, EXIT } from "../sdk/index.mjs";
@@ -30,7 +30,6 @@ import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitSession, emitPh
 // is no `||default` on a single field below: a value the runtime did not send
 // is a refusal, because a default here is this recipe deciding what to book.
 const TASK=(process.env.TASK||"book").toLowerCase();
-const MODE=(process.env.PURCHASE_MODE||"dry").toLowerCase();
 const IN=(()=>{
   const raw=process.env.RECIPE_INPUT;
   if(!raw){ L("ABORT: RECIPE_INPUT is required — this recipe has no environment fallback"); process.exit(EXIT.badInput); }
@@ -48,6 +47,11 @@ const FLIGHT=IN.flight||"";
 const FARE_PRICE=Number(IN.fare_price||0);
 const CONTACT_EMAIL=IN.contact_email||"";   // the ORACLE address — give the supplier exactly this
 const PAX=(IN.passengers||[])[0]||null;     // position 0 is the lead
+// The only fact about spending this recipe is given: a card AND a gate to
+// ask. Not a mode — a mode is a promise; this is a capability.
+const APPROVE_SIGNAL_FILE=process.env.APPROVE_SIGNAL_FILE||"";
+const HAS_CARD=!!(process.env.CARD_NUMBER&&process.env.CARD_EXPIRATION&&process.env.CARD_CVV);
+const CAN_PAY=HAS_CARD&&!!APPROVE_SIGNAL_FILE;
 
 // bail: narrate, clean up, flush stdout, exit with a contract code. A real
 // recipe closes its browser session in the cleanup hook.
@@ -114,7 +118,7 @@ if(!fare) await bail(EXIT.offerGone,`fare at $${FARE_PRICE} not in the live menu
 // the outcome object: emitted EVEN on a crash after Pay (see the catch at
 // the bottom of the reference recipe) — payClicked is what the runtime
 // trusts to tell refund from uncertain.
-const bookOutcome={ task:"book", mode:MODE, payClicked:false, total:null, reason:"", reference:"", paymentStatus:"unverified" };
+const bookOutcome={ task:"book", payClicked:false, total:null, reason:"", reference:"", paymentStatus:"unverified" };
 
 if(!PAX){ await bail(EXIT.badInput,"book with no passengers in the input document"); }
 L(`passenger: ${PAX.given} ${PAX.surname}`);
@@ -128,21 +132,23 @@ bookOutcome.total=total;
 L(`checkout total: $${total} USD`);
 if(!(total>0)){ bookOutcome.reason="no readable cashier total"; await bail(EXIT.offerGone,"no readable checkout total — refusing"); }
 
-// dry: the walk proves the flow; the card was never even in our env.
-if(MODE==="dry"){
-  bookOutcome.reason="dry mode — stopped before Pay";
-  L("dry: stopping before Pay");
+// The one branch that matters, and it is not a mode (§2.2): were we handed
+// the two things spending requires? Without them the walk still proved the
+// whole flow, which is what a conformance run is for.
+if(!CAN_PAY){
+  bookOutcome.reason="no payment method or gate — walk-only run";
+  L("walk-only run: stopping before Pay");
   emitResult("book", bookOutcome);
   await drain();
   process.exit(EXIT.ok);
 }
 
-// approve: park at the checkout, show the human everything, wait for the verdict.
-if(MODE==="approve"){
+// Park at the checkout, show the human everything, wait for the verdict.
+{
   emitApproval({ task:"book-approve", sessionId:"toy", total, currency:"USD", flight:FLIGHT, returnFlight:null,
     fare:fare.brand, itinerary:`${f.airline} ${f.departISO}→${f.arriveISO}`, lead:`${PAX.given} ${PAX.surname}`,
     pax:1, screenshots:[] });
-  const verdict=await waitApproval({ file:process.env.APPROVE_SIGNAL_FILE||"", timeoutS:Number(process.env.APPROVE_TIMEOUT_S||480) });
+  const verdict=await waitApproval({ file:APPROVE_SIGNAL_FILE, timeoutS:Number(process.env.APPROVE_TIMEOUT_S||480) });
   if(verdict!=="APPROVE"){ bookOutcome.reason=`approval ${verdict}`; await bail(EXIT.offerGone,`human gate: ${verdict} — no Pay`); }
   L("approval received → paying");
 }
