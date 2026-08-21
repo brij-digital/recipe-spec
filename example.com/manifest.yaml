@@ -48,5 +48,8 @@ known_traps:                     # what you learned the hard way — quote strin
   - "the toy supplier has no traps; a real one has many — write them down here"
 
 author:
-  partner: example               # your identity = the wallet that paid the submission
+  partner: example               # a label; the wallet below is the identity
+  # REQUIRED, and it must be the wallet that pays for the submission: it is
+  # what lets you read this recipe back (GET /recipes/source/<domain>).
+  wallet: 9a6pGJsb9gUoYJVWvrBDGxm2Yvqti9AKs6tEL9maZBG7
   primary: true
