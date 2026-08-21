@@ -73,6 +73,14 @@ export const until = async (cond, ms = 8000, step = 400) => {
 // DX, the runner is the trust boundary.
 const isNum = x => typeof x === "number" && Number.isFinite(x);
 const isStr = x => typeof x === "string" && x.length > 0;
+// The marketplace settles in USD and converts nothing, so a price without a
+// currency is not "probably dollars" — it is a price nobody checked. Say it
+// once, here, and every result carries a currency that was verified.
+const SELLABLE_CURRENCY = "USD";
+const currencyError = (what, currency) =>
+  !isStr(currency) ? `${what}: currency is required (the marketplace sells ${SELLABLE_CURRENCY} and converts nothing)`
+  : currency.toUpperCase() !== SELLABLE_CURRENCY ? `${what}: currency ${currency} is not sellable — this marketplace settles in ${SELLABLE_CURRENCY}`
+  : "";
 
 export const validators = {
   search(p) {
@@ -84,6 +92,8 @@ export const validators = {
       const roundTrip = isNum(o.price_total) && o.price_total > 0 && o.outbound && o.return;
       if (!oneWay && !roundTrip) errs.push(`offers[${i}]: needs price>0 (one-way) or price_total>0 + outbound + return (round trip)`);
       if (!isStr(o.id) && !(o.outbound && isStr(o.outbound.id))) errs.push(`offers[${i}]: id missing`);
+      const cur = currencyError(`offers[${i}]`, o.currency);
+      if (cur) errs.push(cur);
     });
     return errs;
   },
@@ -92,6 +102,8 @@ export const validators = {
     if (!Array.isArray(p.fares)) { errs.push("fares must be an array"); return errs; }
     p.fares.forEach((f, i) => {
       if (!isNum(f.price) || f.price <= 0) errs.push(`fares[${i}]: price must be > 0`);
+      const cur = currencyError(`fares[${i}]`, f.currency);
+      if (cur) errs.push(cur);
       if (f.conditions !== undefined && !Array.isArray(f.conditions)) errs.push(`fares[${i}]: conditions must be an array`);
     });
     return errs;
