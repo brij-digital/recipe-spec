@@ -37,23 +37,12 @@ coverage:                        # bounds the search fan-out — quote only what
   cabins: [Y]
   trip_types: [ow]
 
-proxy_country: US                # suppliers serve different inventory per geo;
                                  # one order's search/details/book share this value
-
-budgets:                         # enforced by the runtime
-  search_s: 90
-  offer_details_s: 120
-  book_s: 600
-  bb_minutes_per_order: 8
 
 payment:
   currency: USD
   max_amount: 150                # above this, orders are not routed here
-  three_ds: expected             # the issuer may challenge — handle it (SDK waitOTP)
 
-fares:
-  policy: nonrefundable_only
-  baggage: canonical_triple      # "Personal item · Carry-on · Checked"; silence = Not included
 
 known_traps:                     # what you learned the hard way — quote strings containing ':'
   - "the toy supplier has no traps; a real one has many — write them down here"

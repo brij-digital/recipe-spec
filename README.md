@@ -284,8 +284,6 @@ One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com
 | `kind` | `browser` (this contract) · `api` (a connector — same signals, no browser) |
 | `oracle` | `type: email` + `template` (version label), and OPTIONALLY `issued_pattern` / `pnr_pattern` (group 1 = PNR) / `cancelled_subject_pattern` — all three or none (a partial set is a typo that would silently never settle, and is a hard error). None = **bootstrap**: the first real confirmation email is stored and pages the operator, the patterns are written against it, and the booking settles retroactively inside its hold. Do NOT declare `sender_domains`: the settlement authority is derived from `domain` and always is the supplier itself; a declared foreign entry is refused at load. The author supplies patterns; DKIM verification and the capture decision are never the recipe's |
 | `coverage` | regions / cabins actually handled — bounds the search fan-out |
-| `proxy_country` | inventory-per-geo pin |
-| `budgets` | `search_s`, `book_s`, browser minutes — enforced |
 | `payment.max_amount` | above this, orders are not routed to the recipe |
 | `known_traps` | what you learned the hard way — reviewers and your future self thank you |
 
