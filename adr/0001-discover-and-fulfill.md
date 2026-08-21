@@ -86,7 +86,7 @@ use it later without a migration.
    the input exists.
 4. **No fulfill without a settlement oracle.** Escrow capture requires a
    supplier-side proof the marketplace can verify on its own — today a
-   DKIM-verified confirmation email from `oracle.sender_domains` to an
+   DKIM-verified confirmation email from the supplier's own domain to an
    address the marketplace controls. A domain with no verifiable
    confirmation signal cannot carry an auto-settling fulfill recipe: it is
    human-approval only, or it waits for another oracle type. The recipe's
