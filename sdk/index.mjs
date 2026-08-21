@@ -229,6 +229,98 @@ export const waitOTP = async ({ file, timeoutS }) => {
   return "";
 };
 
+// ── submit3DSCode: type the code INTO the challenge and confirm ───────────
+// Waiting for a code and then not entering it is not a 3-D Secure flow: the
+// payment simply never completes, and every challenged order freezes as
+// uncertain. That was ryanair.com until 2026-08-21 — it logged "code entered"
+// and moved on.
+//
+// Why it lives here: the mechanics are the issuer's, not the supplier's. The
+// challenge renders in a cross-origin OOPIF (cardinal / centinel / stepup /
+// acs), where Stagehand's act() fails with "extension world not ready" —
+// observed live on 3 of 3 attempts. A parallel Playwright CDP client does
+// traverse those frames, so the code is typed frame-side, by shape rather
+// than by a hard-coded selector: an input whose name/aria/placeholder says
+// code, else a short maxLength, else the only input on the frame.
+//
+// The code goes into the page and nowhere else — never logged, never cached.
+//
+//   cdp             the parallel Playwright browser (connectOverCDP)
+//   code            the one-time code
+//   stillChallenged optional () => Promise<boolean>, the recipe's own
+//                   detection; used to stop as soon as the challenge is gone
+//   fallback        optional async (attempt) => void, e.g. an act() pass for
+//                   a challenge rendered where CDP cannot reach
+//   attempts        how many times to try (default 3)
+//
+// Returns true once the challenge is gone (or the code was accepted and no
+// detection was supplied), false if it never left.
+export const submit3DSCode = async ({ cdp, code, stillChallenged, fallback, attempts = 3, log = L }) => {
+  const lastPage = () => {
+    try { const ps = cdp.contexts().flatMap(c => c.pages()); return ps[ps.length - 1] || null; }
+    catch { return null; }
+  };
+  const fillOnce = async () => {
+    const pp = lastPage();
+    if (!pp) { log("  [3DS] no Playwright client — cannot reach the challenge frame"); return false; }
+    log("  [3DS] frames: " + pp.frames().map(f => (f.url() || "?").replace(/^https?:\/\//, "").slice(0, 45)).join(" | "));
+    for (const fr of pp.frames()) {
+      const url = (fr.url() || "").toLowerCase();
+      let found = false;
+      try {
+        found = await fr.evaluate(() => {
+          const visible = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const inputs = [...document.querySelectorAll("input")].filter(i => visible(i) && !/hidden|checkbox|radio|button|submit/.test(i.type));
+          const meta = i => ((i.name || "") + " " + (i.id || "") + " " + (i.placeholder || "") + " " + (i.getAttribute("aria-label") || "")).toLowerCase();
+          const target = inputs.find(i => /code|otp|pass|pin|token|secur|challenge/.test(meta(i)))
+            || inputs.find(i => i.maxLength > 0 && i.maxLength <= 10)
+            || (inputs.length === 1 ? inputs[0] : null);
+          if (!target) return false;
+          target.setAttribute("data-otp-target", "1");
+          return true;
+        });
+      } catch {}
+      if (!found) {
+        if (/cardinal|centinel|stepup|acs|3ds|challenge|authenticat/.test(url)) log(`  [3DS] frame ${url.slice(0, 55)}: code input not found`);
+        continue;
+      }
+      try {
+        await fr.fill('[data-otp-target="1"]', code, { timeout: 8000 });
+        log(`  [3DS] code entered ✓ (frame ${(url || "same-origin").replace(/^https?:\/\//, "").slice(0, 50)})`);
+        const hasButton = await fr.evaluate(() => {
+          const visible = e => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; };
+          const b = [...document.querySelectorAll("button,input[type=submit],[role=button]")].filter(visible)
+            .find(e => /confirm|submit|verify|validate|continue|\bpay\b|\bok\b/i.test((e.innerText || e.value || "").trim())
+              && (e.innerText || e.value || "").trim().length < 30);
+          if (!b) return false;
+          b.setAttribute("data-otp-submit", "1");
+          return true;
+        });
+        if (hasButton) { await fr.click('[data-otp-submit="1"]', { timeout: 8000 }); log("  [3DS] Confirm clicked ✓"); }
+        else { await fr.press('[data-otp-target="1"]', "Enter").catch(() => {}); log("  [3DS] no button found → Enter"); }
+        return true;
+      } catch (e) { log("  [3DS] frame-fill failed: " + String(e.message).slice(0, 70)); }
+    }
+    return false;
+  };
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const filled = await fillOnce();
+    await sleep(3000);
+    if (stillChallenged) {
+      if (!(await stillChallenged())) { log("  [3DS] validated (left the challenge)"); return true; }
+    } else if (filled) {
+      return true;
+    }
+    if (!filled && fallback) {
+      await fallback(attempt);
+      await sleep(3000);
+      if (stillChallenged && !(await stillChallenged())) { log("  [3DS] validated (fallback)"); return true; }
+    }
+    log(`  [3DS] still on the challenge (attempt ${attempt})`);
+  }
+  return false;
+};
+
 // ── runtimeModel: the LLM behind Stagehand, WITHOUT an Anthropic key ──────
 // Stagehand v4 accepts a "bring your own LLM" callback ({ generate }) that
 // runs in THIS process. The runtime gives the recipe LLM_PROXY_URL (a
