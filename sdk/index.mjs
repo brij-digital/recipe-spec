@@ -320,6 +320,47 @@ export const runtimeModel = ({ modelName = process.env.SH_MODEL || "anthropic/cl
 // the recipe. cdpUrl is the Browserbase connect URL (BB_CONNECT_URL) or the
 // local http://127.0.0.1:<port>. playwright is imported lazily so the toy
 // recipe and the validators stay dependency-free.
+// ── the browser, obtained from the runtime ────────────────────────────────
+// A recipe does not create browser sessions. The marketplace's trusted runner
+// does: it holds the Browserbase key, picks the proxy geo, the region, the
+// timeout and the keepAlive policy, uploads Stagehand's extension, and ends
+// the session when the run is over. What reaches the recipe is a connect URL
+// and, for book, the id of the preloaded extension — never a key.
+//
+// connectRuntimeBrowser attaches to that session and returns the handle. It
+// deliberately CANNOT create one: no key is read, no session API is called,
+// and an absent BB_CONNECT_URL is a refusal rather than a fallback. That is
+// what stops a recipe choosing its own geo, its own timeout, or its own
+// session — decisions that belong to whoever pays for them.
+//
+// Returns { browser, sessionId, connectUrl }. `browser` is a Stagehand
+// handle for book (which needs act()/extract() for the card), and null for
+// the 0-LLM tasks, which drive the page over CDP instead — attaching
+// Stagehand there would make the session unreusable.
+//
+// Closing: the caller must NOT end the session. It belongs to the runner,
+// which reuses it (a warm session skips ~24s of cold start) and ends it.
+//
+// stagehand is imported lazily, like playwright below, so the toy recipe and
+// the validators stay dependency-free.
+export const connectRuntimeBrowser = async ({ task } = {}) => {
+  const connectUrl = (process.env.BB_CONNECT_URL || "").trim();
+  const sessionId = (process.env.BB_SESSION_ID || "").trim();
+  const extensionId = (process.env.BB_EXTENSION_ID || "").trim();
+  if (!connectUrl) {
+    throw new Error("BB_CONNECT_URL is required: the runtime owns the browser session and this recipe cannot create one");
+  }
+  if (task !== "book") {
+    return { browser: null, sessionId: sessionId || "runner-owned", connectUrl };
+  }
+  if (!extensionId) {
+    throw new Error("BB_EXTENSION_ID is required for book: Stagehand attaches to the runner's session by its preloaded extension");
+  }
+  const { localBrowser } = await import("@browserbasehq/stagehand");
+  const browser = await localBrowser.connect({ cdpUrl: connectUrl, extensionId });
+  return { browser, sessionId: sessionId || "runner-owned", connectUrl };
+};
+
 export const captureJSON = async (cdpUrl, routes, { log = () => {} } = {}) => {
   const { chromium } = await import("playwright");
   const browser = await chromium.connectOverCDP(cdpUrl);
