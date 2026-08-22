@@ -557,14 +557,19 @@ export const connectLocalBrowser = async ({ needsBrowser = false } = {}) => {
 //
 // stagehand is imported lazily, like playwright below, so the toy recipe and
 // the validators stay dependency-free.
-export const connectRuntimeBrowser = async ({ task } = {}) => {
+export const connectRuntimeBrowser = async ({ task, needsBrowser = task === "book" } = {}) => {
   const connectUrl = (process.env.BB_CONNECT_URL || "").trim();
   const sessionId = (process.env.BB_SESSION_ID || "").trim();
   const extensionId = (process.env.BB_EXTENSION_ID || "").trim();
   if (!connectUrl) {
     throw new Error("BB_CONNECT_URL is required: the runtime owns the browser session and this recipe cannot create one");
   }
-  if (task !== "book") {
+  // needsBrowser, not the task name: a book that will never touch a card
+  // (the conformance walk) has nothing to say to an LLM, so it must not
+  // demand the extension the runner only uploads for a paying one. The local
+  // path already worked this way; the two disagreed, and the runtime one won
+  // by refusing a run it could have served.
+  if (!needsBrowser) {
     return { browser: null, sessionId: sessionId || "runner-owned", connectUrl };
   }
   if (!extensionId) {
@@ -613,7 +618,7 @@ export const attachStagehand = async ({ browser, modelName = process.env.SH_MODE
 // decides how long to wait on a captcha (nobody is watching a headless run).
 export const connectBrowser = async ({ task, needsBrowser = task === "book" } = {}) => {
   if (process.env.BB === "1" || process.env.BB === "true") {
-    const session = await connectRuntimeBrowser({ task });
+    const session = await connectRuntimeBrowser({ task, needsBrowser });
     L(`Browserbase session from the runtime (${session.sessionId}) — keyless${session.browser ? ", Stagehand attached" : ""}`);
     return { ...session, launched: null, remote: true };
   }
