@@ -1,14 +1,46 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "__FULFILLER_RESULT__ — task: book (protocol v1)",
+  "title": "__FULFILLER_RESULT__ \u2014 task: book (protocol v1)",
   "type": "object",
-  "required": ["v", "task", "payClicked", "paymentStatus"],
+  "required": [
+    "v",
+    "task",
+    "payClicked",
+    "paymentStatus"
+  ],
   "properties": {
-    "v": { "const": 1 },
-    "task": { "const": "book" },
-    "payClicked": { "type": "boolean" },
-    "paymentStatus": { "enum": ["paid", "failed", "unverified"] },
-    "tripOrderId": { "type": "string" },
-    "malformed": { "type": "boolean" }
+    "v": {
+      "const": 1
+    },
+    "task": {
+      "const": "book"
+    },
+    "payClicked": {
+      "type": "boolean"
+    },
+    "paymentStatus": {
+      "enum": [
+        "paid",
+        "failed",
+        "unverified"
+      ]
+    },
+    "tripOrderId": {
+      "type": "string"
+    },
+    "malformed": {
+      "type": "boolean"
+    },
+    "payReachable": {
+      "type": "boolean",
+      "description": "What a walk-only run proves: Pay was located and is present, enabled and uncovered. false = a wall stood in the way (see blocker). Absent = not checked, which the runtime treats as unproven."
+    },
+    "blocker": {
+      "type": "string",
+      "description": "Why Pay is not reachable, e.g. account-required, cookie-wall. Meaningful only with payReachable:false."
+    },
+    "reason": {
+      "type": "string"
+    }
   }
 }

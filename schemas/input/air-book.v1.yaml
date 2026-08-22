@@ -38,5 +38,8 @@ runtime_provides:
   - payment_method    # card fields, injected only in a paying mode
   - approval          # human gate verdict (signal file)
   - otp               # 3-D Secure code relay (signal file)
+  - ephemeral_account # flow: ephemeral-account only — ACCOUNT_PASSWORD generated per
+                      # run, and the email verification relayed through a signal file.
+                      # The account's email IS contact_email (the order's address).
   - browser_session
   - llm

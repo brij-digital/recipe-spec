@@ -1,249 +1,291 @@
 {
-  "comment": "Shared conformance corpus: every case lists the task, the payload handed to emitResult, and whether a v1 implementation must accept it. The SDK validators and the JSON Schemas must agree on every case; the marketplace runner replays the same corpus in Go.",
-  "cases": [
-    {
-      "name": "search minimal one-way",
-      "task": "search",
-      "valid": true,
-      "payload": {
-        "route": "mad-bcn",
-        "count": 1,
-        "offers": [
-          {
-            "id": "2026-12-03 09:30:00|2026-12-03 10:50:00|Vueling",
-            "price": 63.3,
-            "currency": "USD"
-          }
-        ]
-      }
-    },
-    {
-      "name": "search empty is honest",
-      "task": "search",
-      "valid": true,
-      "payload": {
-        "route": "mad-bcn",
-        "count": 0,
-        "offers": []
-      }
-    },
-    {
-      "name": "search round trip",
-      "task": "search",
-      "valid": true,
-      "payload": {
-        "count": 1,
-        "offers": [
-          {
-            "price_total": 120.5,
-            "outbound": {
-              "id": "a|b|X"
-            },
-            "return": {
-              "id": "c|d|X"
-            },
-            "currency": "USD"
-          }
-        ]
-      }
-    },
-    {
-      "name": "search count lies",
-      "task": "search",
-      "valid": false,
-      "payload": {
-        "count": 3,
-        "offers": [
-          {
-            "id": "x",
-            "price": 10
-          }
-        ]
-      }
-    },
-    {
-      "name": "search zero price",
-      "task": "search",
-      "valid": false,
-      "payload": {
-        "count": 1,
-        "offers": [
-          {
-            "id": "x",
-            "price": 0
-          }
-        ]
-      }
-    },
-    {
-      "name": "search negative price",
-      "task": "search",
-      "valid": false,
-      "payload": {
-        "count": 1,
-        "offers": [
-          {
-            "id": "x",
-            "price": -5
-          }
-        ]
-      }
-    },
-    {
-      "name": "search offer without id",
-      "task": "search",
-      "valid": false,
-      "payload": {
-        "count": 1,
-        "offers": [
-          {
-            "price": 10
-          }
-        ]
-      }
-    },
-    {
-      "name": "details minimal",
-      "task": "offer-details",
-      "valid": true,
-      "payload": {
-        "base": 36,
-        "fares": [
-          {
-            "price": 39.9,
-            "conditions": [
-              {
-                "type": "CARRY_ON",
-                "text": "1 \u00d7 10 kg"
-              }
-            ],
-            "currency": "USD"
-          }
-        ]
-      }
-    },
-    {
-      "name": "details fare priced zero",
-      "task": "offer-details",
-      "valid": false,
-      "payload": {
-        "fares": [
-          {
-            "price": 0
-          }
-        ]
-      }
-    },
-    {
-      "name": "details fares not an array",
-      "task": "offer-details",
-      "valid": false,
-      "payload": {
-        "fares": "many"
-      }
-    },
-    {
-      "name": "book paid",
-      "task": "book",
-      "valid": true,
-      "payload": {
-        "payClicked": true,
-        "paymentStatus": "paid",
-        "tripOrderId": "1688901127004207"
-      }
-    },
-    {
-      "name": "book clean failure",
-      "task": "book",
-      "valid": true,
-      "payload": {
-        "payClicked": false,
-        "paymentStatus": "failed"
-      }
-    },
-    {
-      "name": "book payClicked stringly",
-      "task": "book",
-      "valid": false,
-      "payload": {
-        "payClicked": "yes",
-        "paymentStatus": "paid"
-      }
-    },
-    {
-      "name": "book paymentStatus outside enum",
-      "task": "book",
-      "valid": false,
-      "payload": {
-        "payClicked": true,
-        "paymentStatus": "probably"
-      }
-    },
-    {
-      "name": "book missing everything",
-      "task": "book",
-      "valid": false,
-      "payload": {}
-    },
-    {
-      "name": "search offer without a currency",
-      "task": "search",
-      "valid": false,
-      "comment": "the marketplace settles in USD and converts nothing: a price with no currency is a price nobody checked",
-      "payload": {
-        "route": "mad-bcn",
-        "count": 1,
-        "offers": [
-          {
-            "id": "x|y|FR",
-            "price": 63.3
-          }
-        ]
-      }
-    },
-    {
-      "name": "search offer priced in another currency",
-      "task": "search",
-      "valid": false,
-      "comment": "ryanair.com priced in EUR while being sold as USD (2026-08-21) \u2014 nothing in the pipeline converts",
-      "payload": {
-        "route": "mad-ibz",
-        "count": 1,
-        "offers": [
-          {
-            "id": "x|y|FR",
-            "price": 31.57,
-            "currency": "EUR"
-          }
-        ]
-      }
-    },
-    {
-      "name": "details fare without a currency",
-      "task": "offer-details",
-      "valid": false,
-      "payload": {
-        "fares": [
-          {
-            "price": 36.87,
-            "brand": "BASIC"
-          }
-        ]
-      }
-    },
-    {
-      "name": "details fare priced in another currency",
-      "task": "offer-details",
-      "valid": false,
-      "payload": {
-        "fares": [
-          {
-            "price": 36.87,
-            "brand": "BASIC",
-            "currency": "GBP"
-          }
-        ]
-      }
-    }
-  ]
+ "comment": "Shared conformance corpus: every case lists the task, the payload handed to emitResult, and whether a v1 implementation must accept it. The SDK validators and the JSON Schemas must agree on every case; the marketplace runner replays the same corpus in Go.",
+ "cases": [
+  {
+   "name": "search minimal one-way",
+   "task": "search",
+   "valid": true,
+   "payload": {
+    "route": "mad-bcn",
+    "count": 1,
+    "offers": [
+     {
+      "id": "2026-12-03 09:30:00|2026-12-03 10:50:00|Vueling",
+      "price": 63.3,
+      "currency": "USD"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search empty is honest",
+   "task": "search",
+   "valid": true,
+   "payload": {
+    "route": "mad-bcn",
+    "count": 0,
+    "offers": []
+   }
+  },
+  {
+   "name": "search round trip",
+   "task": "search",
+   "valid": true,
+   "payload": {
+    "count": 1,
+    "offers": [
+     {
+      "price_total": 120.5,
+      "outbound": {
+       "id": "a|b|X"
+      },
+      "return": {
+       "id": "c|d|X"
+      },
+      "currency": "USD"
+     }
+    ]
+   }
+  },
+  {
+   "name": "search count lies",
+   "task": "search",
+   "valid": false,
+   "payload": {
+    "count": 3,
+    "offers": [
+     {
+      "id": "x",
+      "price": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "search zero price",
+   "task": "search",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "offers": [
+     {
+      "id": "x",
+      "price": 0
+     }
+    ]
+   }
+  },
+  {
+   "name": "search negative price",
+   "task": "search",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "offers": [
+     {
+      "id": "x",
+      "price": -5
+     }
+    ]
+   }
+  },
+  {
+   "name": "search offer without id",
+   "task": "search",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "offers": [
+     {
+      "price": 10
+     }
+    ]
+   }
+  },
+  {
+   "name": "details minimal",
+   "task": "offer-details",
+   "valid": true,
+   "payload": {
+    "base": 36,
+    "fares": [
+     {
+      "price": 39.9,
+      "conditions": [
+       {
+        "type": "CARRY_ON",
+        "text": "1 \u00d7 10 kg"
+       }
+      ],
+      "currency": "USD"
+     }
+    ]
+   }
+  },
+  {
+   "name": "details fare priced zero",
+   "task": "offer-details",
+   "valid": false,
+   "payload": {
+    "fares": [
+     {
+      "price": 0
+     }
+    ]
+   }
+  },
+  {
+   "name": "details fares not an array",
+   "task": "offer-details",
+   "valid": false,
+   "payload": {
+    "fares": "many"
+   }
+  },
+  {
+   "name": "book paid",
+   "task": "book",
+   "valid": true,
+   "payload": {
+    "payClicked": true,
+    "paymentStatus": "paid",
+    "tripOrderId": "1688901127004207"
+   }
+  },
+  {
+   "name": "book clean failure",
+   "task": "book",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "failed"
+   }
+  },
+  {
+   "name": "book payClicked stringly",
+   "task": "book",
+   "valid": false,
+   "payload": {
+    "payClicked": "yes",
+    "paymentStatus": "paid"
+   }
+  },
+  {
+   "name": "book paymentStatus outside enum",
+   "task": "book",
+   "valid": false,
+   "payload": {
+    "payClicked": true,
+    "paymentStatus": "probably"
+   }
+  },
+  {
+   "name": "book missing everything",
+   "task": "book",
+   "valid": false,
+   "payload": {}
+  },
+  {
+   "name": "search offer without a currency",
+   "task": "search",
+   "valid": false,
+   "comment": "the marketplace settles in USD and converts nothing: a price with no currency is a price nobody checked",
+   "payload": {
+    "route": "mad-bcn",
+    "count": 1,
+    "offers": [
+     {
+      "id": "x|y|FR",
+      "price": 63.3
+     }
+    ]
+   }
+  },
+  {
+   "name": "search offer priced in another currency",
+   "task": "search",
+   "valid": false,
+   "comment": "ryanair.com priced in EUR while being sold as USD (2026-08-21) \u2014 nothing in the pipeline converts",
+   "payload": {
+    "route": "mad-ibz",
+    "count": 1,
+    "offers": [
+     {
+      "id": "x|y|FR",
+      "price": 31.57,
+      "currency": "EUR"
+     }
+    ]
+   }
+  },
+  {
+   "name": "details fare without a currency",
+   "task": "offer-details",
+   "valid": false,
+   "payload": {
+    "fares": [
+     {
+      "price": 36.87,
+      "brand": "BASIC"
+     }
+    ]
+   }
+  },
+  {
+   "name": "details fare priced in another currency",
+   "task": "offer-details",
+   "valid": false,
+   "payload": {
+    "fares": [
+     {
+      "price": 36.87,
+      "brand": "BASIC",
+      "currency": "GBP"
+     }
+    ]
+   }
+  },
+  {
+   "name": "book walk-only, pay reachable",
+   "task": "book",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true
+   }
+  },
+  {
+   "name": "book walk-only behind an account wall",
+   "task": "book",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": false,
+    "blocker": "account-required"
+   }
+  },
+  {
+   "name": "book payReachable is not a boolean",
+   "task": "book",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": "yes"
+   }
+  },
+  {
+   "name": "book clicked Pay it could not reach",
+   "task": "book",
+   "valid": false,
+   "payload": {
+    "payClicked": true,
+    "paymentStatus": "unverified",
+    "payReachable": false,
+    "blocker": "account-required"
+   }
+  }
+ ]
 }

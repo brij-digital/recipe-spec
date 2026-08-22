@@ -113,3 +113,21 @@ const bailChild = paid => spawnSync(process.execPath, ["--input-type=module", "-
 }
 console.log(`SDK unit total: ${unit - unitFailed}/${unit} passed`);
 if (unitFailed) process.exit(1);
+
+// waitVerification's parser: one line, three verdicts, and anything else is
+// "not a verdict yet" — a half-written file must never be read as one.
+import { parseVerification, EXIT, MARKERS } from "./sdk/index.mjs";
+{
+  const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  check("verification: CODE", eq(parseVerification("CODE 483920"), { kind: "code", value: "483920" }));
+  check("verification: URL https", eq(parseVerification("URL https://www.ryanair.com/verify?t=abc"), { kind: "url", value: "https://www.ryanair.com/verify?t=abc" }));
+  check("verification: REJECT is null", parseVerification("REJECT") === null);
+  check("verification: http URL is not a verdict", parseVerification("URL http://evil/") === undefined);
+  check("verification: empty file is not a verdict", parseVerification("") === undefined);
+  check("verification: partial line is not a verdict", parseVerification("COD") === undefined);
+  check("verification: code with spaces is not a verdict", parseVerification("CODE 12 34") === undefined);
+  check("EXIT.accountRequired is 8", EXIT.accountRequired === 8);
+  check("verification marker", MARKERS.verification === "__FULFILLER_VERIFICATION__");
+}
+console.log(`SDK unit total (with verification): ${unit - unitFailed}/${unit} passed`);
+if (unitFailed) process.exit(1);

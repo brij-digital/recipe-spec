@@ -13,7 +13,7 @@ capabilities:                    # what this recipe implements (adr/0001); absen
     input_schema: air-book.v1
     accepts: [offer_ref]         # what a book target may be; later: url (fulfill-only recipes)
 
-flow: guest                      # no account, no login — the target family
+flow: ephemeral-account          # the supplier sells to accounts only: one per ORDER (§2.6-bis)
 kind: browser                    # browser | api (a connector speaks the same signals)
 
 oracle:

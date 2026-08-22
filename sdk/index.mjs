@@ -24,6 +24,7 @@ export const MARKERS = {
   result: "__FULFILLER_RESULT__",     // task outcome (search offers, fare menu, bookResult)
   approval: "__FULFILLER_APPROVAL__", // parked at the checkout, waiting for a verdict
   threeDS: "__FULFILLER_3DS__",       // waiting for an SCA code
+  verification: "__FULFILLER_VERIFICATION__", // an ephemeral account awaits its email code/link
   session: "__FULFILLER_SESSION__",   // reusable Browserbase session id
   phase: "__FULFILLER_PHASE__",       // timeline step (emitPhase) — powers the evidence timeline
 };
@@ -38,6 +39,9 @@ export const EXIT = {
   checkoutFail: 4, // could not reach the checkout
   returnFail: 5,   // round-trip return selection failed
   paxRejected: 6,  // passenger form rejected — stop, never hammer
+  accountRequired: 8, // the supplier will not sell to a guest, and this run holds no account
+                   // (no ACCOUNT_PASSWORD): the wall was reached and photographed, nothing
+                   // was submitted. Clean — nothing was paid.
   malformed: 7,    // the recipe built a result that violates the schema — the SDK refused to emit it
   uncertain: 7,    // alias of 7 — money may have moved and nothing confirms it: use for EVERY
                    // unconfirmed outcome after the Pay click (exception, 3DS timeout, unreadable
@@ -112,6 +116,13 @@ export const validators = {
     const errs = [];
     if (typeof p.payClicked !== "boolean") errs.push("payClicked must be a boolean");
     if (!["paid", "failed", "unverified"].includes(p.paymentStatus)) errs.push("paymentStatus must be paid|failed|unverified");
+    // payReachable is what a walk-only run proves: it located Pay and found
+    // it present, enabled and uncovered — or it reports what stood in the
+    // way. A dry run that stops "just before Pay" without it proved nothing
+    // about Pay.
+    if (p.payReachable !== undefined && typeof p.payReachable !== "boolean") errs.push("payReachable must be a boolean when present");
+    if (p.blocker !== undefined && typeof p.blocker !== "string") errs.push("blocker must be a string when present");
+    if (p.payClicked === true && p.payReachable === false) errs.push("payClicked cannot be true when payReachable is false");
     return errs;
   },
 };
@@ -142,6 +153,10 @@ export const emitResult = (task, payload) => {
 };
 export const emitApproval = obj => console.log(MARKERS.approval + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "approval" }));
 export const emit3DS = obj => console.log(MARKERS.threeDS + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "3ds" }));
+// emitVerification: the ephemeral account was created on the order's address
+// and the supplier sent something there — a code or a link. The runtime owns
+// that inbox; the recipe asks and waits (waitVerification), never reads mail.
+export const emitVerification = obj => console.log(MARKERS.verification + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "verification" }));
 export const emitSession = id => { if (id) console.log(MARKERS.session + id); };
 // emitPhase marks a step of the run ("search", "select", "passenger-form",
 // "cashier"…). The runtime parses these into the evidence timeline; the last
@@ -240,6 +255,44 @@ export const waitOTP = async ({ file, timeoutS }) => {
     await sleep(2000);
   }
   return "";
+};
+
+// ── waitVerification: the email verification of an ephemeral account ──────
+// The supplier mails the order's address; the runtime relays what arrived
+// into VERIFY_SIGNAL_FILE, one line:
+//   CODE 123456                      → { kind: "code", value: "123456" }
+//   URL https://supplier/verify/…    → { kind: "url",  value: "https://…" }
+//   REJECT                           → null  (the operator declined)
+// Timeout → null. The value is typed into the page or navigated to — where
+// the browser may go is bounded by the session's allowedDomains, not here.
+// A URL must be https; anything else in the file is ignored and waited past,
+// so a half-written line never becomes a verdict.
+export const parseVerification = line => {
+  const m = String(line || "").trim().match(/^(CODE|URL|REJECT)(?:\s+(\S+))?$/i);
+  if (!m) return undefined;
+  const kind = m[1].toUpperCase();
+  if (kind === "REJECT") return null;
+  if (kind === "CODE") return /^[A-Za-z0-9-]{3,12}$/.test(m[2] || "") ? { kind: "code", value: m[2] } : undefined;
+  return /^https:\/\/\S+$/.test(m[2] || "") ? { kind: "url", value: m[2] } : undefined;
+};
+export const waitVerification = async ({ file, timeoutS }) => {
+  const t0 = Date.now();
+  if (!file) {
+    L("  (no VERIFY_SIGNAL_FILE — type CODE <code> or URL <https://…> + Enter)");
+    process.stdin.resume();
+    return await new Promise(res => {
+      const to = setTimeout(() => res(null), timeoutS * 1000);
+      process.stdin.once("data", d => { clearTimeout(to); res(parseVerification(String(d)) ?? null); });
+    });
+  }
+  while ((Date.now() - t0) / 1000 < timeoutS) {
+    try {
+      const v = parseVerification(fs.readFileSync(file, "utf8"));
+      if (v !== undefined) return v;
+    } catch {}
+    await sleep(2000);
+  }
+  return null;
 };
 
 // ── submit3DSCode: type the code INTO the challenge and confirm ───────────

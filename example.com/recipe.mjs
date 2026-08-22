@@ -22,8 +22,8 @@
 //
 //   Add CARD_NUMBER=... CARD_EXPIRATION=MM/YY CARD_CVV=... APPROVE_SIGNAL_FILE=/tmp/verdict
 //   then: echo APPROVE > /tmp/verdict — the runtime's verdict, written by hand.
-import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitSession, emitPhase,
-  makeBail, waitApproval, waitOTP, EXIT } from "../sdk/index.mjs";
+import { L, sleep, drain, emitResult, emitApproval, emit3DS, emitVerification, emitSession, emitPhase,
+  makeBail, waitApproval, waitOTP, waitVerification, EXIT } from "../sdk/index.mjs";
 
 // ── the job: ONE document, no fallback (§2.1 of the README) ──
 // The environment says how to run; RECIPE_INPUT says what to do. Notice there
@@ -55,7 +55,13 @@ const CAN_PAY=HAS_CARD&&!!APPROVE_SIGNAL_FILE;
 
 // bail: narrate, clean up, flush stdout, exit with a contract code. A real
 // recipe closes its browser session in the cleanup hook.
-const bail=makeBail({ cleanup:async()=>L("(cleanup: a real recipe closes its browser here)") });
+// committed/onCommitted: once Pay is clicked no exit is a clean failure — the
+// runtime refunds those, and the card may already be charged. bail owns the
+// rule so no call site can get it wrong; bookOutcome is declared below and
+// read lazily, which is why this closure is legal before it exists.
+const bail=makeBail({ cleanup:async()=>L("(cleanup: a real recipe closes its browser here)"),
+  committed:()=>bookOutcome.payClicked,
+  onCommitted:msg=>{ if(!bookOutcome.reason) bookOutcome.reason=msg; emitResult("book", bookOutcome); } });
 
 // ── the pretend supplier: three firm offers, one fare menu ──
 // A real recipe gets these from the supplier's own pages/payloads. Note the
@@ -67,6 +73,7 @@ const offer=(dep,arr,price)=>({ id:`${iso(dep)}|${iso(arr)}|EX`, airline:"Exampl
   from:DCITY.toUpperCase(), to:ACITY.toUpperCase(),
   segments:[{ flightNo:"EX123", airline:"EX", from:DCITY.toUpperCase(), to:ACITY.toUpperCase(), dep:iso(dep), arr:iso(arr) }] });
 const pretendSupplier={
+  requiresAccount:true,   // like Ryanair: a login wall on the last screen, no way around
   offers:[ offer("09:05","10:20",49.9), offer("13:30","14:45",36.6), offer("21:10","22:25",64.0) ],
   fares:f=>[ { price:f.price, currency:"USD", seats:5, cabin:"economy", brand:"Basic",
                conditions:[{type:"baggage",text:"Personal item only"},{type:"refund",text:"Non-refundable"}] },
@@ -132,6 +139,34 @@ bookOutcome.total=total;
 L(`checkout total: $${total} USD`);
 if(!(total>0)){ bookOutcome.reason="no readable cashier total"; await bail(EXIT.offerGone,"no readable checkout total — refusing"); }
 
+// ── the signup wall (§2.6-bis) ──
+// This pretend supplier, like Ryanair, refuses to sell to a guest: the last
+// screen before Pay is a login modal with no close button. One account per
+// ORDER, on the order's own address. Without ACCOUNT_PASSWORD — every
+// conformance run — we photograph the wall, say so, and stop: a dry run
+// creates no account anywhere.
+emitPhase("cashier");
+if(pretendSupplier.requiresAccount){
+  const password=process.env.ACCOUNT_PASSWORD||"";
+  if(!password){
+    emitPhase("signup-wall");
+    L("the supplier will not sell to a guest and this run holds no account — stopping at the wall");
+    bookOutcome.reason="account required — walk-only run";
+    bookOutcome.payReachable=false; bookOutcome.blocker="account-required";
+    emitResult("book", bookOutcome);
+    await drain();
+    process.exit(EXIT.accountRequired);
+  }
+  emitPhase("signup");
+  L(`signing up as ${CONTACT_EMAIL} (the order's address — the runtime owns that inbox)`);
+  await sleep(300);   // pretend: the signup form, password typed, submitted
+  emitVerification({ sessionId:"toy", email:CONTACT_EMAIL, need:"code", screenshots:[] });
+  const verification=await waitVerification({ file:process.env.VERIFY_SIGNAL_FILE, timeoutS:Number(process.env.VERIFY_TIMEOUT_S||300) });
+  if(!verification){ bookOutcome.reason="signup: no verification within the deadline"; await bail(EXIT.accountRequired,"email verification never arrived — no account, no Pay"); }
+  L(`verification ${verification.kind} received → account active`);   // never log the value
+}
+bookOutcome.payReachable=true;
+
 // The one branch that matters, and it is not a mode (§2.2): were we handed
 // the two things spending requires? Without them the walk still proved the
 // whole flow, which is what a conformance run is for.
@@ -164,7 +199,7 @@ await sleep(300);
 if(process.env.OTP_SIGNAL_FILE){
   emit3DS({ sessionId:"toy", need:"otp", total, screenshots:[] });
   const otp=await waitOTP({ file:process.env.OTP_SIGNAL_FILE, timeoutS:Number(process.env.OTP_TIMEOUT_S||300) });
-  if(!otp){ bookOutcome.reason="3DS: no code within the deadline"; emitResult("book", bookOutcome); await drain(); process.exit(EXIT.offerGone); }
+  if(!otp){ bookOutcome.reason="3DS: no code within the deadline"; await bail(EXIT.offerGone,"3-D Secure: no code — a human resolves this"); }   // after Pay, bail reports UNCERTAIN whatever code is asked
   L("3DS code entered");
 }
 
