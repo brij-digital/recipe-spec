@@ -150,6 +150,9 @@ if(pretendSupplier.requiresAccount){
   const password=process.env.ACCOUNT_PASSWORD||"";
   if(!password){
     emitPhase("signup-wall");
+    // A real recipe photographs the wall here (snap("l-signup-wall.png")):
+    // the gate wants the phase AND a screenshot, not a JSON claim. This toy
+    // has no browser to photograph.
     L("the supplier will not sell to a guest and this run holds no account — stopping at the wall");
     bookOutcome.reason="account required — walk-only run";
     bookOutcome.payReachable=false; bookOutcome.blocker="account-required";
