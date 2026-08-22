@@ -41,3 +41,75 @@ console.log("ALL PASS");
   }
   console.log(`manifest↔schema: ${refs.length} references verified`);
 }
+
+// ── unit tests for the shared code that runs with a card in the process ──
+// submit3DSCode and makeBail are the two SDK functions whose bugs cost money,
+// and both were exercised only through a browser. A fake CDP is enough: what
+// matters is which frame is chosen, what is typed, and what is reported.
+import { submit3DSCode, makeBail } from "./sdk/index.mjs";
+
+const fakeFrame = (url, { input = null, button = null } = {}) => {
+  const state = { filled: null, clicked: false, pressed: false };
+  return {
+    state,
+    url: () => url,
+    evaluate: async fn => {
+      const src = String(fn);
+      if (src.includes("data-otp-target")) return !!input;
+      if (src.includes("data-otp-submit")) return !!button;
+      return false;
+    },
+    fill: async (_sel, value) => { state.filled = value; },
+    click: async () => { state.clicked = true; },
+    press: async () => { state.pressed = true; },
+  };
+};
+const fakeCdp = frames => ({ contexts: () => [{ pages: () => [{ frames: () => frames }] }] });
+
+let unit = 0, unitFailed = 0;
+const check = (name, ok) => { unit++; if (!ok) { unitFailed++; console.log(`✗ ${name}`); } else console.log(`✓ ${name}`); };
+
+{ // the code goes into the frame that has the input, and Confirm is clicked
+  const noInput = fakeFrame("https://acs.issuer.test/step", {});
+  const challenge = fakeFrame("https://cardinal.test/stepup", { input: true, button: true });
+  const ok = await submit3DSCode({ cdp: fakeCdp([noInput, challenge]), code: "483920", attempts: 1, log: () => {} });
+  check("3DS: types into the frame that has the field", challenge.state.filled === "483920");
+  check("3DS: clicks Confirm", challenge.state.clicked === true);
+  check("3DS: reports success when no detection is supplied", ok === true);
+}
+{ // no button → Enter, rather than silently doing nothing
+  const challenge = fakeFrame("https://cardinal.test/stepup", { input: true, button: false });
+  await submit3DSCode({ cdp: fakeCdp([challenge]), code: "111111", attempts: 1, log: () => {} });
+  check("3DS: falls back to Enter when the frame has no submit button", challenge.state.pressed === true);
+}
+{ // the recipe's own detection decides, not the fill
+  const challenge = fakeFrame("https://cardinal.test/stepup", { input: true, button: true });
+  const stuck = await submit3DSCode({ cdp: fakeCdp([challenge]), code: "000000", attempts: 2,
+    stillChallenged: async () => true, log: () => {} });
+  check("3DS: a code that never clears the challenge is a failure", stuck === false);
+}
+{ // no frame carries a code field at all
+  const ok = await submit3DSCode({ cdp: fakeCdp([fakeFrame("https://trip.test/pay", {})]), code: "1", attempts: 1, log: () => {} });
+  check("3DS: no reachable input is a failure, not a success", ok === false);
+}
+
+// makeBail exits the process, so its two outcomes are checked in a child.
+// This is the money-losing case: after the Pay click, a "clean failure" is
+// what makes the marketplace refund a customer whose card is charged.
+import { spawnSync } from "node:child_process";
+const bailChild = paid => spawnSync(process.execPath, ["--input-type=module", "-e", `
+  import { makeBail } from "${new URL("./sdk/index.mjs", import.meta.url).pathname}";
+  const bail = makeBail({ committed: () => ${paid}, onCommitted: () => console.log("EMITTED") });
+  await bail(3, "3-D Secure: no code provided");
+`], { encoding: "utf8" });
+
+{
+  const after = bailChild(true);
+  check("bail: post-Pay exits uncertain (7), not the clean code", after.status === 7);
+  check("bail: post-Pay emits the outcome so the runtime sees the click", after.stdout.includes("EMITTED"));
+  const before = bailChild(false);
+  check("bail: pre-Pay keeps the code the recipe asked for", before.status === 3);
+  check("bail: pre-Pay emits nothing", !before.stdout.includes("EMITTED"));
+}
+console.log(`SDK unit total: ${unit - unitFailed}/${unit} passed`);
+if (unitFailed) process.exit(1);

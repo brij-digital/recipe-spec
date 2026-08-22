@@ -182,12 +182,25 @@ export const makeShot = (getPage, { skip = () => false } = {}) => async name => 
 // makeBail({shot, cleanup}): narrate, capture the failure, run the recipe's cleanup (close the
 // browser session…), FLUSH stdout, exit. shot is the recipe's cheap screenshot helper (may be a
 // no-op on search); cleanup must never throw the bail off course — it is awaited inside a guard.
-export const makeBail = ({ shot, cleanup } = {}) => async (code, msg, png) => {
+// `committed` reports whether Pay has been clicked, and `onCommitted` emits
+// the outcome. Once money may have moved, NO exit code is a clean failure:
+// the runtime refunds a clean failure, so a post-Pay bail refunds a customer
+// whose card may already be charged, and the operator eats the ticket. The
+// conversion lives here rather than at each call site because it has to hold
+// for the bail nobody thought about — trip.com's 3-D Secure timeout was
+// exactly that one, reporting exit 3 (offer gone) after clicking Pay.
+export const makeBail = ({ shot, cleanup, committed, onCommitted } = {}) => async (code, msg, png) => {
   L(msg);
   if (png && shot) await shot(png);
+  let paid = false;
+  try { paid = committed ? !!(await committed()) : false; } catch {}
+  if (paid) {
+    L("  ⚠️ Pay was already clicked — reporting UNCERTAIN, not a failure (a failure would refund a charged card)");
+    try { await onCommitted?.(msg); } catch {}
+  }
   try { await cleanup?.(); } catch {}
   await drain();
-  process.exit(code);
+  process.exit(paid ? EXIT.uncertain : code);
 };
 
 // ── runtime gates: a file, no network. Boring on purpose. ──
