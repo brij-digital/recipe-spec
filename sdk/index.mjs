@@ -562,6 +562,53 @@ export const connectRuntimeBrowser = async ({ task } = {}) => {
   return { browser, sessionId: sessionId || "runner-owned", connectUrl };
 };
 
+// attachStagehand: the LLM-driven half, obtained rather than assembled.
+// Both recipes wrote the same four lines — create Stagehand on the handle,
+// then take the context's active page — around the same model expression, and
+// both carried a placeholder key ("sk-not-needed-for-dry") for the case where
+// there is no model at all. A placeholder key does not make act() work; it
+// turns a missing model into a 401 three minutes later, inside a checkout.
+// Here it is a refusal, before the browser is touched.
+//
+// Where the model comes from is the runtime's business: in production a
+// per-run proxy token (runtimeModel), in local development an ANTHROPIC_API_KEY.
+// A recipe never holds a raw key in production and does not choose between them.
+export const attachStagehand = async ({ browser, modelName = process.env.SH_MODEL || "anthropic/claude-sonnet-4-6" } = {}) => {
+  if (!browser) throw new Error("attachStagehand: no browser handle — the runtime attaches Stagehand for book only");
+  const key = (process.env.ANTHROPIC_API_KEY || "").trim();
+  const model = runtimeModel({ modelName }) || (key ? { modelName, apiKey: key } : null);
+  if (!model) throw new Error("attachStagehand: no model — the runtime supplies LLM_PROXY_URL + LLM_RUN_TOKEN, local development needs ANTHROPIC_API_KEY");
+  const { Stagehand } = await import("@browserbasehq/stagehand");
+  const stagehand = await Stagehand.create({ browser, model });
+  const page = (await browser.context.activePage()) ?? (await browser.context.newPage());
+  return { stagehand, page };
+};
+
+// connectBrowser: the one call a recipe makes to get a page. Both recipes
+// carried the same fifteen-line if/else — BB=1 means the runtime owns the
+// session, anything else means a developer's Chromium — and a branch copied
+// per recipe is a branch that drifts (trip.com's copy never closed the local
+// browser; ryanair's did).
+//
+// It is NOT a fallback: under BB=1 a missing BB_CONNECT_URL still throws,
+// exactly as before. The runtime never silently degrades to launching its own
+// browser — that would hide a broken runner behind a slow, keyless run.
+//
+// Returns { browser, sessionId, connectUrl, launched, remote }. `launched` is
+// the dev Chromium this call started, and the only thing a recipe may close;
+// `remote` says a real proxy and solveCaptchas are in play, which is what
+// decides how long to wait on a captcha (nobody is watching a headless run).
+export const connectBrowser = async ({ task, needsBrowser = task === "book" } = {}) => {
+  if (process.env.BB === "1" || process.env.BB === "true") {
+    const session = await connectRuntimeBrowser({ task });
+    L(`Browserbase session from the runtime (${session.sessionId}) — keyless${session.browser ? ", Stagehand attached" : ""}`);
+    return { ...session, launched: null, remote: true };
+  }
+  const local = await connectLocalBrowser({ needsBrowser });
+  L(`local Chromium (${local.connectUrl})`);
+  return { ...local, remote: false };
+};
+
 export const captureJSON = async (cdpUrl, routes, { log = () => {} } = {}) => {
   const { chromium } = await import("playwright");
   const browser = await chromium.connectOverCDP(cdpUrl);
