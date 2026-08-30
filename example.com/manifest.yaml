@@ -20,7 +20,7 @@ oracle:
   type: email                    # settlement truth = the supplier's confirmation email
   template: example_v1           # version label of the patterns below
   # The patterns ARE the template: the marketplace's settlement engine
-  # executes them once the recipe's tier is live. YOU supply the domain
+  # executes them once the domain is live. YOU supply the domain
   # knowledge; DKIM verification, sender alignment and the capture
   # decision stay the marketplace's — your declaration never moves money.
   # No sample email in hand? OMIT all three patterns (all-or-none):
@@ -36,8 +36,6 @@ coverage:                        # bounds the search fan-out — quote only what
   regions: [EU]
   cabins: [Y]
   trip_types: [ow]
-
-                                 # one order's search/details/book share this value
 
 payment:
   currency: USD

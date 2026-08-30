@@ -329,7 +329,7 @@ One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com
 
 | Key | Meaning |
 |---|---|
-| `domain` | the supplier host |
+| `domain` | the supplier host — and the identity everything else derives from. The marketplace TIER this recipe quotes and settles under is the domain itself: do NOT declare `tier`, it is refused at load. A declared one can only restate `domain` or be wrong, and when it is wrong it is wrong in three places at once (the daily canary asks whether that tier sells, the settlement engine keys its email template by it, the fulfiller quotes under it) |
 | `protocol_version` | the SDK/signal protocol the recipe speaks (current: `1`); the runtime refuses versions it does not support and treats a signal `v` that contradicts the manifest as malformed |
 | `recipe` | entry file |
 | `capabilities` | which tasks the recipe implements, each referencing a versioned input contract from [`schemas/input/`](schemas/input/) (`input_schema: air-book.v1`, plus `accepts` for book targets) — public field names, never transport env ([ADR 0001](adr/0001-discover-and-fulfill.md)); absent = all three air.v1 schemas with `accepts: [offer_ref]` (the current behavior). Descriptive in protocol 1 |
