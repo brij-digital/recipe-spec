@@ -131,3 +131,40 @@ import { parseVerification, EXIT, MARKERS } from "./sdk/index.mjs";
 }
 console.log(`SDK unit total (with verification): ${unit - unitFailed}/${unit} passed`);
 if (unitFailed) process.exit(1);
+
+// The case file: what a bail leaves for whoever debugs it next. Two
+// properties are worth a test — the card must not survive into a file kept
+// for a week, and a bail must produce the dump without the recipe asking,
+// since a recipe that had to remember would eventually not.
+import { dumpCase, recordPayload, makeShot } from "./sdk/index.mjs";
+import { mkdtempSync, readFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { gunzipSync } from "node:zlib";
+{
+  const dir = mkdtempSync(`${tmpdir()}/case-`);
+  const cwd = process.cwd();
+  process.chdir(dir);
+  process.env.CARD_NUMBER = "4111111111111111";
+  process.env.TASK = "book";
+  recordPayload("https://supplier.test/FareOptions", { fares: [{ price: 1 }] });
+  const page = {
+    url: () => "https://supplier.test/checkout",
+    content: async () => `<input type="password" value="hunter2"><b>4111111111111111</b>`,
+  };
+  const written = await dumpCase(() => page, { exit: 4, message: "fare menu not captured" });
+  check("case: the three files are written", written.length === 3);
+  const state = JSON.parse(readFileSync("case.state.json", "utf8"));
+  check("case: state names the url and the bail", state.url === "https://supplier.test/checkout" && state.exit === 4);
+  const html = gunzipSync(readFileSync("case.html.gz")).toString();
+  check("case: the card never reaches the file", !html.includes("4111111111111111"));
+  check("case: a password input keeps no value", !html.includes("hunter2"));
+  const payloads = JSON.parse(gunzipSync(readFileSync("case.payloads.json.gz")).toString());
+  check("case: the supplier payload is the fixture", JSON.parse(payloads[0].body).fares.length === 1);
+  // makeShot carries its page so makeBail can dump without a second argument
+  // in every recipe — the coverage rests on that, not on authors remembering.
+  check("case: the shot helper exposes its page to bail", typeof makeShot(() => page).getPage === "function");
+  process.chdir(cwd);
+  check("case: nothing was written outside the run's directory", !existsSync("case.state.json"));
+}
+console.log(`SDK unit total (with case files): ${unit - unitFailed}/${unit} passed`);
+if (unitFailed) process.exit(1);

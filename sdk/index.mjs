@@ -18,6 +18,7 @@
 // reference recipe (the production one) — behavior-identical, only the
 // wiring (dependency injection for page/cleanup) is new.
 import fs from "fs";
+import zlib from "node:zlib";
 
 // ── the machine markers: one line on stdout, prefix + JSON, parsed by the runner ──
 export const MARKERS = {
@@ -163,7 +164,96 @@ export const emitSession = id => { if (id) console.log(MARKERS.session + id); };
 // phase before a failing exit becomes the structured failure_phase an author
 // (or an agent) iterates on. Cheap, honest, worth sprinkling.
 const PHASE_T0 = Date.now();
-export const emitPhase = name => { if (name) console.log(MARKERS.phase + JSON.stringify({ phase: String(name), at: Date.now() - PHASE_T0, v: PROTOCOL_VERSION })); };
+export const emitPhase = name => {
+  if (!name) return;
+  CASE.phase = String(name); // the case file's "where was it" — free, since the phase is already declared here
+  console.log(MARKERS.phase + JSON.stringify({ phase: String(name), at: Date.now() - PHASE_T0, v: PROTOCOL_VERSION }));
+};
+
+// ── case files: what a FAILURE leaves behind, beyond the picture ──────────
+// A PNG says a walk broke. It never says which selector to write, so a
+// broken selector meant freezing a live session and hoping the intermittent
+// case came back — a day, on the seat modal. What actually answers the
+// question is the DOM at the moment of the failure and the JSON the site
+// answered with, and both are free to keep: the page is open and the
+// payloads have already gone past.
+//
+// Written next to the screenshot, harvested by the runtime with it
+// (/v1/runs/collect), swept with it:
+//   case.state.json          where it was, what it wanted, what it saw
+//   case.html.gz             outerHTML — replay it offline against selectors
+//   case.payloads.json.gz    the supplier responses the run captured
+//
+// Bounded on purpose: a case file that costs a run its memory is not
+// evidence, it is a second bug.
+const CASE_PAYLOADS = 8, CASE_PAYLOAD_BYTES = 256 * 1024, CASE_HTML_BYTES = 8 * 1024 * 1024;
+const CASE = { phase: "", payloads: [] };
+
+// recordPayload keeps ONE supplier response in a ring of the last few. The
+// SDK's own captureJSON feeds it for every route a recipe declares, so a
+// recipe that captures through the SDK gets its payload fixtures without a
+// line of its own. body may be an object or raw text.
+export const recordPayload = (url, body) => {
+  try {
+    const text = typeof body === "string" ? body : JSON.stringify(body);
+    if (!text) return;
+    CASE.payloads.push({
+      url: String(url || "").slice(0, 500),
+      at: Date.now() - PHASE_T0,
+      phase: CASE.phase,
+      // Truncation is marked, never silent: a fixture nobody can tell is
+      // partial is a test that fails for the wrong reason later.
+      body: text.length > CASE_PAYLOAD_BYTES ? text.slice(0, CASE_PAYLOAD_BYTES) : text,
+      truncated: text.length > CASE_PAYLOAD_BYTES,
+    });
+    while (CASE.payloads.length > CASE_PAYLOADS) CASE.payloads.shift();
+  } catch {}
+};
+
+// redactCase removes the CARD from anything written to disk. The card is
+// not normally IN the DOM — a typed value is a property, not an attribute,
+// so outerHTML does not carry it — but "not normally" is not a property to
+// rest on when the file is kept for a week: the digits we know are removed
+// by value, and password fields lose their value attribute.
+//
+// The ephemeral account's password is deliberately NOT here: it is a nonce
+// for a throwaway account, and treating it like the card would say it is
+// worth as much.
+const redactCase = text => {
+  let out = String(text);
+  for (const k of ["CARD_NUMBER", "CARD_CVV", "CARD_EXPIRATION"]) {
+    const v = process.env[k];
+    if (v && v.length >= 3) out = out.split(v).join("«redacted»");
+  }
+  return out.replace(/(<input[^>]*type=["\']password["\'][^>]*?)value=("[^"]*"|\'[^\']*\')/gi, "$1value=\"«redacted»\"");
+};
+
+// dumpCase writes the case file. Best-effort from end to end: a failing run
+// is already failing, and nothing here may change how it ends.
+export const dumpCase = async (getPage, state = {}) => {
+  const written = [];
+  const write = (name, text, gzip) => {
+    try {
+      const raw = Buffer.from(redactCase(text));
+      fs.writeFileSync(name, gzip ? zlib.gzipSync(raw) : raw);
+      written.push(name);
+    } catch {}
+  };
+  let url = "";
+  try { url = getPage?.()?.url?.() || ""; } catch {}
+  write("case.state.json", JSON.stringify({
+    task: process.env.TASK || "", url, phase: CASE.phase, at: Date.now() - PHASE_T0,
+    session: process.env.BB_SESSION_ID || "", ...state,
+  }, null, 2), false);
+  try {
+    const html = await getPage?.()?.content?.();
+    // A page over the cap is dropped rather than cut: half a document is
+    // not a smaller fixture, it is one no parser can load.
+    if (html && html.length <= CASE_HTML_BYTES) write("case.html.gz", html, true);
+  } catch {}
+  if (CASE.payloads.length) write("case.payloads.json.gz", JSON.stringify(CASE.payloads), true);
+  return written;
+};
 
 // ── screenshot evidence ──
 // approvalShots: ABSOLUTE paths collected for the approval/3DS requests (the runner reads these files).
@@ -187,10 +277,19 @@ export const makeSnap = getPage => async name => {
 // bookkeeping, and it swallows its own failure — a debugging aid must never
 // take a run down. Both recipes had reimplemented exactly this, which was the
 // last reason author code imported `fs`.
-export const makeShot = (getPage, { skip = () => false } = {}) => async name => {
-  if (skip()) return null;
-  const p = name.endsWith(".png") ? name : name + ".png";
-  try { fs.writeFileSync(p, await getPage().screenshot()); return p; } catch { return null; }
+export const makeShot = (getPage, { skip = () => false } = {}) => {
+  const shot = async name => {
+    if (skip()) return null;
+    const p = name.endsWith(".png") ? name : name + ".png";
+    try { fs.writeFileSync(p, await getPage().screenshot()); return p; } catch { return null; }
+  };
+  // makeBail dumps the DOM of the page that failed, and the page it must
+  // reach is exactly the one this closure holds. Carried on the function
+  // rather than asked of the recipe: both ends are the SDK's, and a second
+  // constructor argument is a line every recipe would have to add (and one
+  // of them would forget) for a file the runtime collects anyway.
+  shot.getPage = getPage;
+  return shot;
 };
 
 // ── clean exit ──
@@ -207,6 +306,13 @@ export const makeShot = (getPage, { skip = () => false } = {}) => async name => 
 export const makeBail = ({ shot, cleanup, committed, onCommitted } = {}) => async (code, msg, png) => {
   L(msg);
   if (png && shot) await shot(png);
+  // The case file, always — not only when the recipe remembered to ask for
+  // a screenshot. This is the bail EVERY failure goes through, which is the
+  // only reason the coverage is complete.
+  if (shot?.getPage) {
+    const kept = await dumpCase(shot.getPage, { exit: code, message: String(msg).slice(0, 500) });
+    if (kept.length) L(`  [case] ${kept.join(", ")}`);
+  }
   let paid = false;
   try { paid = committed ? !!(await committed()) : false; } catch {}
   if (paid) {
@@ -697,6 +803,7 @@ export const captureJSON = async (cdpUrl, routes, { log = () => {} } = {}) => {
     for (const [name, r] of Object.entries(routes)) {
       if (!matches(r.match, url)) continue;
       let json; try { json = await res.json(); } catch { continue; }
+      recordPayload(url, json); // the fixture half: a payload + its mapper is a free, deterministic test
       let k; try { k = r.key ? r.key(json, url) : "*"; } catch { k = null; }
       if (k === null || k === undefined) continue;
       let v; try { v = r.parse ? r.parse(json, url) : json; } catch { continue; }

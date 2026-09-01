@@ -299,6 +299,39 @@ Full-page PNGs at the milestones via the SDK's `snap` — paths carried in
 the signals, read by the runtime. Evidence for humans and judges; **never
 settlement** (principle 1).
 
+### 2.10-bis Case files — what a failure leaves for the next debugger
+
+A screenshot says a walk broke. It never says which selector to write, so a
+recipe that only photographs its failures is debugged by freezing a live
+session and hoping the case comes back. **Every `bail` therefore writes a
+case file** — you get this for free, there is nothing to call:
+
+```
+case.state.json         task, url, phase, exit code, the bail message
+case.html.gz            the DOM at the instant of the failure
+case.payloads.json.gz   the last supplier responses the run captured
+```
+
+The runtime harvests them out of the sandbox before destroying it, keeps
+them beside the screenshots, and serves them back to you
+(`GET /recipes/canary/{domain}/case/{name}`,
+`GET /recipes/submissions/{id}/evidence/case/{name}`). Load one into a blank
+page and your selector question is answered offline, with no session and no
+proxy.
+
+`captureJSON` (§2.7-bis) feeds the payload half on its own. A recipe that
+captures its supplier's JSON some other way can record it explicitly:
+
+```js
+import { recordPayload } from "../sdk/index.mjs";
+recordPayload(url, rawBodyOrObject);   // bounded ring: the last 8, 256 KB each
+```
+
+Two rules the SDK enforces so a case file stays safe to keep: the card is
+redacted by value (and password inputs lose their `value` attribute), and a
+file over its cap is dropped rather than truncated — half a gzipped DOM is
+not a smaller fixture, it is one no parser can load.
+
 ### 2.11 What a recipe must never do
 
 - persist, log or transmit a card number, CVV or passenger identity beyond
