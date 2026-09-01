@@ -145,11 +145,24 @@ import { gunzipSync } from "node:zlib";
   const cwd = process.cwd();
   process.chdir(dir);
   process.env.CARD_NUMBER = "4111111111111111";
+  process.env.LLM_RUN_TOKEN = "tok_live_abcdef123456";
   process.env.TASK = "book";
+  // The job this run was given: the traveller in it is what a real booking's
+  // passenger form puts in the DOM.
+  process.env.RECIPE_INPUT = JSON.stringify({
+    schema: "air-book.v1", task: "book",
+    data: {
+      origin_iata: "MAD", destination_iata: "LIS", depart_date: "2026-09-22", flight: "IB3106",
+      passengers: [{ given: "Amelia", surname: "Kowalczyk", dob: "1988-04-17", gender: "F", nationality: "PL", idnum: "ZS4471902" }],
+      contact_email: "o-42@bookings.brij.fi", contact_phone: "+351912345678",
+    },
+  });
   recordPayload("https://supplier.test/FareOptions", { fares: [{ price: 1 }] });
   const page = {
     url: () => "https://supplier.test/checkout",
-    content: async () => `<input type="password" value="hunter2"><b>4111111111111111</b>`,
+    content: async () => `<input type="password" value="hunter2"><b>4111111111111111</b>` +
+      `<i>tok_live_abcdef123456</i><input name=surname value="Kowalczyk"><span>1988-04-17 ZS4471902 ` +
+      `o-42@bookings.brij.fi +351912345678</span><p>F PL IB3106 MAD</p>`,
   };
   const written = await dumpCase(() => page, { exit: 4, message: "fare menu not captured" });
   check("case: the three files are written", written.length === 3);
@@ -158,6 +171,15 @@ import { gunzipSync } from "node:zlib";
   const html = gunzipSync(readFileSync("case.html.gz")).toString();
   check("case: the card never reaches the file", !html.includes("4111111111111111"));
   check("case: a password input keeps no value", !html.includes("hunter2"));
+  // A real booking's case file holds the passenger form. The runtime knows
+  // exactly which strings it sent, so they go by VALUE — no pattern hunting.
+  for (const pii of ["Kowalczyk", "1988-04-17", "ZS4471902", "o-42@bookings.brij.fi", "+351912345678"]) {
+    check(`case: the traveller's ${pii.slice(0, 6)}… is redacted`, !html.includes(pii));
+  }
+  check("case: a live run token is redacted", !html.includes("tok_live_abcdef123456"));
+  // …and the page is still a usable fixture: what is NOT identity survives,
+  // including the two-letter codes a value-based redaction must not eat.
+  check("case: the DOM structure survives redaction", html.includes("<input name=surname") && html.includes("IB3106") && html.includes("F PL"));
   const payloads = JSON.parse(gunzipSync(readFileSync("case.payloads.json.gz")).toString());
   check("case: the supplier payload is the fixture", JSON.parse(payloads[0].body).fares.length === 1);
   // makeShot carries its page so makeBail can dump without a second argument

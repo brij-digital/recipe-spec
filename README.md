@@ -327,10 +327,20 @@ import { recordPayload } from "../sdk/index.mjs";
 recordPayload(url, rawBodyOrObject);   // bounded ring: the last 8, 256 KB each
 ```
 
-Two rules the SDK enforces so a case file stays safe to keep: the card is
-redacted by value (and password inputs lose their `value` attribute), and a
-file over its cap is dropped rather than truncated — half a gzipped DOM is
-not a smaller fixture, it is one no parser can load.
+Two rules the SDK enforces so a case file stays safe to keep.
+
+**What the run was given never survives in it.** The card, the run's live
+tokens, and the traveller — name, date of birth, document number, contact
+email and phone — are removed BY VALUE, because the runtime knows exactly
+which strings it sent (they are in `RECIPE_INPUT`). By value rather than by
+pattern: hunting for "things that look like a passport number" misses the
+unusual passenger and mangles the ordinary page. Named fields only, and
+nothing under 4 characters — `gender: "F"` redacted by value would eat every
+F in the document. What is not identity stays, so the file is still a
+fixture: the form's structure, the flight, the route.
+
+**A file over its cap is dropped, not truncated** — half a gzipped DOM is not
+a smaller fixture, it is one no parser can load.
 
 ### 2.11 What a recipe must never do
 

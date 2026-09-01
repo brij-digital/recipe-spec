@@ -210,21 +210,53 @@ export const recordPayload = (url, body) => {
   } catch {}
 };
 
-// redactCase removes the CARD from anything written to disk. The card is
-// not normally IN the DOM — a typed value is a property, not an attribute,
-// so outerHTML does not carry it — but "not normally" is not a property to
-// rest on when the file is kept for a week: the digits we know are removed
-// by value, and password fields lose their value attribute.
+// redactCase removes, BY VALUE, what the runtime handed this run and what
+// must not survive in a file kept for a week. By value rather than by
+// pattern: the runtime knows exactly which strings it sent — they are in
+// RECIPE_INPUT and in the environment — so this is exact, where hunting for
+// "things that look like a passport number" is a guess that misses the
+// unusual passenger and mangles the ordinary page.
 //
-// The ephemeral account's password is deliberately NOT here: it is a nonce
-// for a throwaway account, and treating it like the card would say it is
-// worth as much.
+// Three groups, and each is here for its own reason:
+//   the CARD      — it is not normally IN the DOM (a typed value is a
+//                   property, not an attribute) but "not normally" is not a
+//                   property to rest on;
+//   the TOKENS    — a run token and a signed session URL are live
+//                   credentials for as long as the run, and a case file
+//                   outlives it;
+//   the TRAVELLER — a real booking's passenger form is a full identity, and
+//                   the case file is the one place it would sit in the open.
+//
+// Fields are named, not sniffed: `gender` is "M" and `nationality` is "FR",
+// and redacting two-letter values by value would eat every "M" in the page.
+// Anything shorter than 4 characters is left alone for the same reason.
+const PII_FIELDS = ["given", "surname", "dob", "idnum", "idexp", "contact_email", "contact_phone", "email", "phone"];
+const SECRET_ENV = ["CARD_NUMBER", "CARD_CVV", "CARD_EXPIRATION", "LLM_RUN_TOKEN", "BB_CONNECT_URL"];
+
+const caseSecrets = () => {
+  const out = [];
+  for (const k of SECRET_ENV) {
+    const v = process.env[k];
+    if (v && v.length >= 4) out.push(v);
+  }
+  // The traveller, straight from the job this run was given.
+  const collect = node => {
+    if (Array.isArray(node)) return node.forEach(collect);
+    if (!node || typeof node !== "object") return;
+    for (const [key, value] of Object.entries(node)) {
+      if (value && typeof value === "object") { collect(value); continue; }
+      if (typeof value === "string" && value.length >= 4 && PII_FIELDS.includes(key)) out.push(value);
+    }
+  };
+  try { collect(JSON.parse(process.env.RECIPE_INPUT || "{}")); } catch {}
+  // Longest first: a surname that is a substring of an email address must
+  // not leave the email half-redacted and still readable.
+  return [...new Set(out)].sort((a, b) => b.length - a.length);
+};
+
 const redactCase = text => {
   let out = String(text);
-  for (const k of ["CARD_NUMBER", "CARD_CVV", "CARD_EXPIRATION"]) {
-    const v = process.env[k];
-    if (v && v.length >= 3) out = out.split(v).join("«redacted»");
-  }
+  for (const secret of caseSecrets()) out = out.split(secret).join("«redacted»");
   return out.replace(/(<input[^>]*type=["\']password["\'][^>]*?)value=("[^"]*"|\'[^\']*\')/gi, "$1value=\"«redacted»\"");
 };
 
