@@ -260,6 +260,39 @@ const redactCase = text => {
   return out.replace(/(<input[^>]*type=["\']password["\'][^>]*?)value=("[^"]*"|\'[^\']*\')/gi, "$1value=\"«redacted»\"");
 };
 
+// pageHTML/pageURL read the two facts a case file needs from whatever page
+// object the recipe holds — and that is NOT always a Playwright page. Both
+// live recipes drive `wrapPage`'s adapter, whose `url` is ASYNC and which
+// has no `content` at all. The first version of this called `.url()` without
+// awaiting and `.content()` without checking: the first production case file
+// (trip.com, 2026-09-02 05:07) recorded `"url": {}` — a serialized Promise —
+// and no DOM whatsoever, which is the one thing it exists to carry. The
+// smoke test passed because it was written against a page shape I invented
+// rather than the one production drives.
+const pageHTML = async page => {
+  // The adapter keeps the real page on `raw`; ask it directly when it is
+  // there, fall back to a DOM read through `evaluate`, which every surface
+  // in the page-surface contract has.
+  for (const read of [
+    () => page?.raw?.content?.(),
+    () => page?.content?.(),
+    () => page?.evaluate?.(() => document.documentElement.outerHTML),
+  ]) {
+    try {
+      const html = await read();
+      if (typeof html === "string" && html) return html;
+    } catch {}
+  }
+  return "";
+};
+
+const pageURL = async page => {
+  try {
+    const url = await page?.url?.();
+    return typeof url === "string" ? url : "";
+  } catch { return ""; }
+};
+
 // dumpCase writes the case file. Best-effort from end to end: a failing run
 // is already failing, and nothing here may change how it ends.
 export const dumpCase = async (getPage, state = {}) => {
@@ -271,18 +304,17 @@ export const dumpCase = async (getPage, state = {}) => {
       written.push(name);
     } catch {}
   };
-  let url = "";
-  try { url = getPage?.()?.url?.() || ""; } catch {}
+  let page = null;
+  try { page = getPage?.(); } catch {}
+  const url = await pageURL(page);
   write("case.state.json", JSON.stringify({
     task: process.env.TASK || "", url, phase: CASE.phase, at: Date.now() - PHASE_T0,
     session: process.env.BB_SESSION_ID || "", ...state,
   }, null, 2), false);
-  try {
-    const html = await getPage?.()?.content?.();
-    // A page over the cap is dropped rather than cut: half a document is
-    // not a smaller fixture, it is one no parser can load.
-    if (html && html.length <= CASE_HTML_BYTES) write("case.html.gz", html, true);
-  } catch {}
+  const html = await pageHTML(page);
+  // A page over the cap is dropped rather than cut: half a document is not
+  // a smaller fixture, it is one no parser can load.
+  if (html && html.length <= CASE_HTML_BYTES) write("case.html.gz", html, true);
   if (CASE.payloads.length) write("case.payloads.json.gz", JSON.stringify(CASE.payloads), true);
   return written;
 };

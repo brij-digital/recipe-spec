@@ -158,16 +158,24 @@ import { gunzipSync } from "node:zlib";
     },
   });
   recordPayload("https://supplier.test/FareOptions", { fares: [{ price: 1 }] });
-  const page = {
+  // Shaped like wrapPage's ADAPTER, which is what both live recipes drive:
+  // `url` is ASYNC and there is no `content` — the real page hangs off `raw`.
+  // The first version read `.url()` without awaiting and `.content()` without
+  // checking, so the first production case file carried a serialized Promise
+  // for its url and NO DOM at all (trip.com, 2026-09-02). A page shape
+  // invented for a test proved nothing; this one is the shape that ships.
+  const realPage = {
     url: () => "https://supplier.test/checkout",
     content: async () => `<input type="password" value="hunter2"><b>4111111111111111</b>` +
       `<i>tok_live_abcdef123456</i><input name=surname value="Kowalczyk"><span>1988-04-17 ZS4471902 ` +
       `o-42@bookings.brij.fi +351912345678</span><p>F PL IB3106 MAD</p>`,
   };
+  const page = { url: async () => realPage.url(), evaluate: async () => "<html>unused</html>", raw: realPage };
   const written = await dumpCase(() => page, { exit: 4, message: "fare menu not captured" });
   check("case: the three files are written", written.length === 3);
   const state = JSON.parse(readFileSync("case.state.json", "utf8"));
   check("case: state names the url and the bail", state.url === "https://supplier.test/checkout" && state.exit === 4);
+  check("case: the url is a string, never an unawaited promise", typeof state.url === "string");
   const html = gunzipSync(readFileSync("case.html.gz")).toString();
   check("case: the card never reaches the file", !html.includes("4111111111111111"));
   check("case: a password input keeps no value", !html.includes("hunter2"));
@@ -185,6 +193,12 @@ import { gunzipSync } from "node:zlib";
   // makeShot carries its page so makeBail can dump without a second argument
   // in every recipe — the coverage rests on that, not on authors remembering.
   check("case: the shot helper exposes its page to bail", typeof makeShot(() => page).getPage === "function");
+  // A page with neither `raw` nor `content` still yields its DOM: `evaluate`
+  // is on every surface the page-surface contract covers.
+  const evaluateOnly = { url: async () => "https://supplier.test/x", evaluate: async () => "<html>EVAL</html>" };
+  await dumpCase(() => evaluateOnly, { exit: 1 });
+  check("case: the DOM is read through evaluate when there is no content()",
+    gunzipSync(readFileSync("case.html.gz")).toString() === "<html>EVAL</html>");
   process.chdir(cwd);
   check("case: nothing was written outside the run's directory", !existsSync("case.state.json"));
 }
