@@ -223,7 +223,11 @@ export const recordPayload = (url, body) => {
 //                   property to rest on;
 //   the TOKENS    — a run token and a signed session URL are live
 //                   credentials for as long as the run, and a case file
-//                   outlives it;
+//                   outlives it. ACCOUNT_PASSWORD joined them on 2026-09-02:
+//                   it was left out while nothing injected it, and the day
+//                   conformance walks started holding one, the case file
+//                   became a place it could sit — a file an AUTHOR reads
+//                   back, for an account on an inbox we own;
 //   the TRAVELLER — a real booking's passenger form is a full identity, and
 //                   the case file is the one place it would sit in the open.
 //
@@ -231,7 +235,7 @@ export const recordPayload = (url, body) => {
 // and redacting two-letter values by value would eat every "M" in the page.
 // Anything shorter than 4 characters is left alone for the same reason.
 const PII_FIELDS = ["given", "surname", "dob", "idnum", "idexp", "contact_email", "contact_phone", "email", "phone"];
-const SECRET_ENV = ["CARD_NUMBER", "CARD_CVV", "CARD_EXPIRATION", "LLM_RUN_TOKEN", "BB_CONNECT_URL"];
+const SECRET_ENV = ["CARD_NUMBER", "CARD_CVV", "CARD_EXPIRATION", "LLM_RUN_TOKEN", "BB_CONNECT_URL", "ACCOUNT_PASSWORD"];
 
 const caseSecrets = () => {
   const out = [];

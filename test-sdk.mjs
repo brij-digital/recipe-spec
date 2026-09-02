@@ -146,6 +146,7 @@ import { gunzipSync } from "node:zlib";
   process.chdir(dir);
   process.env.CARD_NUMBER = "4111111111111111";
   process.env.LLM_RUN_TOKEN = "tok_live_abcdef123456";
+  process.env.ACCOUNT_PASSWORD = "Br!zzTopSecretPassword99";
   process.env.TASK = "book";
   // The job this run was given: the traveller in it is what a real booking's
   // passenger form puts in the DOM.
@@ -167,7 +168,7 @@ import { gunzipSync } from "node:zlib";
   const realPage = {
     url: () => "https://supplier.test/checkout",
     content: async () => `<input type="password" value="hunter2"><b>4111111111111111</b>` +
-      `<i>tok_live_abcdef123456</i><input name=surname value="Kowalczyk"><span>1988-04-17 ZS4471902 ` +
+      `<i>tok_live_abcdef123456</i><b>Br!zzTopSecretPassword99</b><input name=surname value="Kowalczyk"><span>1988-04-17 ZS4471902 ` +
       `o-42@bookings.brij.fi +351912345678</span><p>F PL IB3106 MAD</p>`,
   };
   const page = { url: async () => realPage.url(), evaluate: async () => "<html>unused</html>", raw: realPage };
@@ -185,6 +186,10 @@ import { gunzipSync } from "node:zlib";
     check(`case: the traveller's ${pii.slice(0, 6)}… is redacted`, !html.includes(pii));
   }
   check("case: a live run token is redacted", !html.includes("tok_live_abcdef123456"));
+  // The ephemeral account's password: harmless while nothing injected it,
+  // a real leak since conformance walks started holding one — and the case
+  // file is read back by the recipe's AUTHOR.
+  check("case: the ephemeral account password is redacted", !html.includes("Br!zzTopSecretPassword99"));
   // …and the page is still a usable fixture: what is NOT identity survives,
   // including the two-letter codes a value-based redaction must not eat.
   check("case: the DOM structure survives redaction", html.includes("<input name=surname") && html.includes("IB3106") && html.includes("F PL"));
