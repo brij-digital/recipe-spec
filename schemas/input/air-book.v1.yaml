@@ -17,6 +17,17 @@ required:
   - destination_iata
   - depart_date       # YYYY-MM-DD
   - flight            # the offer being bought, from this recipe's discovery
+  - cabin_class       # economy | premium_economy | business | first — WHICH
+                      # MENU holds the fare that was sold. The fare itself is
+                      # pinned by fare_price (and fare_index as a tiebreak),
+                      # so this is navigation, not identity — but a recipe
+                      # cannot navigate to a menu nobody named, and assuming
+                      # economy buys the wrong cabin for a business order at
+                      # the same price. Added 2026-09-07.
+                      #
+                      # There is deliberately NO `adults` on this document:
+                      # `passengers` IS the party. One fact stated twice is
+                      # how the two come to disagree; read len(passengers).
   - passengers        # ordered; position 0 is the LEAD (the name refunds match)
                       # each: {given, surname, dob} + optional
                       # {gender, nationality, idnum, idexp}
