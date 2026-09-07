@@ -33,8 +33,9 @@ oracle:
   cancelled_subject_pattern: '(?i)\b(cancel(?:led|ed)?|refund(?:ed)?|failed)\b' 
 
 coverage:                        # bounds the search fan-out — quote only what you can book
-  regions: [EU]
-  cabins: [Y]
+  cabins: [Y]                    # Y economy · W premium economy · C business · F first
+  max_adults: 1                  # absent means 1. Raise it in the same edit
+                                 # that teaches the recipe to read `adults`.
   trip_types: [ow]
 
 payment:

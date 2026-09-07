@@ -92,6 +92,13 @@ Field by field: [`schemas/input/`](schemas/input/) — `air-search.v1`,
 `air-offer-details.v1`, `air-book.v1`. A manifest names the one each task
 speaks (`capabilities.<task>.input_schema`).
 
+**A search is priced for a party and a cabin.** `air-search.v1` and
+`air-offer-details.v1` both carry `adults` and `cabin_class`, both required.
+You are only ever asked for what your manifest's `coverage` declares — cabins
+you did not list are not routed to you, and `coverage.max_adults` (absent = 1)
+bounds the party — so widening what you serve is one edit in one file, and
+there is no moment where you are asked for something you cannot yet read.
+
 **Values are canonical.** Dates are ISO `YYYY-MM-DD` — including passenger
 `dob` and `idexp`. IATA codes are upper-case. Gender is the raw API code
 (`m`/`f`), not a supplier's form label. If your supplier's URLs or forms want
@@ -380,7 +387,7 @@ One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com
 | `flow` | `guest` (no account) · `ephemeral-account` (the supplier will not sell to a guest — one account per ORDER, see §2.6-bis). There is no `account` flow: a persistent, shared account is not a recipe, it is a first-party API fulfiller |
 | `kind` | `browser` (this contract) · `api` (a connector — same signals, no browser) |
 | `oracle` | `type: email` + `template` (version label), and OPTIONALLY `issued_pattern` / `pnr_pattern` (group 1 = PNR) / `cancelled_subject_pattern` — all three or none (a partial set is a typo that would silently never settle, and is a hard error). None = **bootstrap**: the first real confirmation email is stored and pages the operator, the patterns are written against it, and the booking settles retroactively inside its hold. Do NOT declare `sender_domains`: the settlement authority is derived from `domain` and always is the supplier itself; a declared foreign entry is refused at load. The author supplies patterns; DKIM verification and the capture decision are never the recipe's |
-| `coverage` | regions / cabins actually handled — bounds the search fan-out |
+| `coverage` | what you actually handle — `cabins`, `max_adults` (absent = 1), `trip_types`. The marketplace never sends you a search outside it |
 | `payment.max_amount` | above this, orders are not routed to the recipe |
 | `known_traps` | what you learned the hard way — reviewers and your future self thank you |
 

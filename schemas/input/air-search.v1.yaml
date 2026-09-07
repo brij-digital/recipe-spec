@@ -6,7 +6,8 @@
 # fallback: a recipe that cannot read this document cannot run.
 #
 #   RECIPE_INPUT='{"schema":"air-search.v1","task":"search","data":{
-#     "origin_iata":"MAD","destination_iata":"IBZ","depart_date":"2026-11-07"}}'
+#     "origin_iata":"MAD","destination_iata":"IBZ","depart_date":"2026-11-07",
+#     "adults":1,"cabin_class":"economy"}}'
 #
 # Dates are ISO (YYYY-MM-DD) and IATA codes are upper-case, always. Whatever
 # dialect your supplier's URLs want is yours to produce, at your own door.
@@ -16,11 +17,25 @@ required:
   - origin_iata       # IATA, upper-case
   - destination_iata  # IATA, upper-case
   - depart_date       # YYYY-MM-DD
+  - adults            # 1..9 — the party this search is priced for. REQUIRED,
+                      # and there is no default: a recipe that searched for
+                      # one passenger while the buyer asked for two would sell
+                      # a price for a trip it never priced. Added 2026-09-07;
+                      # before it, the marketplace simply refused to route
+                      # multi-passenger searches to any recipe.
+  - cabin_class       # economy | premium_economy | business | first
+                      # Same reason, same date. Your supplier's own letter or
+                      # label is yours to produce at your own door.
 optional:
   - return_date       # YYYY-MM-DD — presence makes the search round-trip
   - only              # fan-out worker index (0-based): expand ONLY this
                       # outbound. Absent = the whole search. Note 0 is a real
                       # index, not "absent".
+# WHAT YOU DECLARE, AND WHAT YOU ARE THEN ASKED. The marketplace never sends a
+# search wider than your manifest's `coverage`: cabins you did not list are not
+# routed to you, and `coverage.max_adults` (absent = 1) bounds the party. So a
+# recipe widens its own door, in the same file where it learns to honour it —
+# there is no window where you are asked for something you cannot yet read.
 runtime_provides:     # injected by the runtime, never caller- or author-declared
   - browser_session   # keyless connect URL
   - llm               # budgeted proxy token
