@@ -405,6 +405,31 @@ malformed BOOK result still emits a minimal well-formed line carrying
 post-Pay outcome as UNCERTAIN — never an automatic refund. Run the corpus
 offline: `node test-sdk.mjs`.
 
+## 2-ter. Versions: what the marketplace means by "version"
+
+A recipe's version — `version` on `GET /recipes` and
+`GET /recipes/source/{domain}`, `sdk_version` for the shared SDK — is the
+hash the marketplace registers, activates, walks in the canary and checks
+before a run may pay. It is **not** the sha256 of a file: it is a content
+hash over a set of files, framed so that two different sets can never hash
+alike.
+
+For each covered file, sorted bytewise by its slash-separated relative path,
+feed `<path> LF <length in bytes> LF <bytes>` into one sha256. Not covered:
+anything under `node_modules/`, and documentation (`.md`, `.png`, `.jpg`,
+`.jpeg`, `.gif`, `.webp`, any case). A submission is the pair
+`recipe.mjs` + `manifest.yaml`; the SDK is the folder `sdk/`.
+
+```bash
+node tools/recipe-version.mjs sdk          # equals sdk_version when this repo is at recipe_spec_sha
+node tools/recipe-version.mjs --submission my.com/recipe.mjs my.com/manifest.yaml
+node tools/recipe-version.test.mjs         # the vector the marketplace's Go half also pins
+```
+
+So "what is published is what runs" is a string comparison: the SDK at the
+`recipe_spec_sha` from `GET /recipes` must hash to its `sdk_version`, and the
+source you read back must hash to its `version`.
+
 ## 3. The manifest
 
 One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com/manifest.yaml).
