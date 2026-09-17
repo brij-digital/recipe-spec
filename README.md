@@ -360,6 +360,38 @@ a smaller fixture, it is one no parser can load.
 - pretend: emit `payClicked=true` only if the Pay control was actually
   activated; obfuscated code (eval, encoded blobs) is rejected without review.
 
+### 2.12 The lint — run it before you submit
+
+Every submission is linted before its dry run, and again when it is
+activated. A finding rejects the submission with the rule and the line, and
+no browser session is spent on it. The rules are [`lint/`](lint/), the exact
+files the marketplace runs, so check locally first:
+
+```bash
+cd lint && npm ci && cd ..
+lint/node_modules/.bin/eslint -c lint/eslint.config.mjs <your-domain>/recipe.mjs
+```
+
+Pass your recipe's path: the rules are for recipes, and the SDK, which
+legitimately reads the filesystem, does not pass them. In short:
+
+- imports: `@browserbasehq/stagehand`, `playwright`, `zod` and
+  `../sdk/index.mjs`, nothing else, and no computed `import()` / `require()`;
+- no `eval` or `Function`;
+- no `fetch`, `XMLHttpRequest`, `WebSocket` or `EventSource`, aliased or not,
+  and no `globalThis[expression]`: the recipe drives the browser, it does not
+  talk to the network itself;
+- `process` only as `process.env.NAME` or `process.exit(…)`;
+- inside `page.evaluate` (and `addInitScript`, `exposeFunction`, …) read the
+  page, don't make it fetch: no writing `src` / `href` / `action` /
+  `innerHTML`, no `createElement("img" | "script" | …)`, no `sendBeacon`,
+  `window.open`, `location.assign`, `document.write`, no absolute URL;
+- every identifier defined (`no-undef`).
+
+`lint/fixtures/hostile.mjs` is what the rules must refuse, and
+`node lint/lint-fixture.mjs` checks that every marked line is caught and no
+honest one is.
+
 ## 2-bis. Protocol version and validation
 
 Every signal the SDK emits is stamped `{ v: 1, task: "…" }` — the SDK

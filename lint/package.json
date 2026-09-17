@@ -1,0 +1,9 @@
+{
+  "name": "recipe-lint",
+  "private": true,
+  "description": "The recipe AST rules, run by the recipe runtime on every submission and activation",
+  "type": "module",
+  "dependencies": {
+    "eslint": "9.39.5"
+  }
+}
