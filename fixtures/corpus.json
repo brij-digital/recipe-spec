@@ -1,5 +1,5 @@
 {
- "comment": "Shared conformance corpus: every case lists the task, the payload handed to emitResult, and whether a v1 implementation must accept it. The SDK validators and the JSON Schemas must agree on every case; the marketplace runner replays the same corpus in Go.",
+ "comment": "Shared conformance corpus: every case lists the task, the payload handed to emitResult, and whether an implementation must accept it. Tasks search / offer-details / book are protocol 1 (signal v:1); quote / buy are protocol 2, shop.v1 (signal v:2) \u2014 CONTRACT-v2 rules marked [corpus] each have a valid and an invalid case here. The SDK validators and the JSON Schemas must agree on every case; the marketplace runner replays the same corpus in Go.",
  "cases": [
   {
    "name": "search minimal one-way",
@@ -285,6 +285,1553 @@
     "paymentStatus": "unverified",
     "payReachable": false,
     "blocker": "account-required"
+   }
+  },
+  {
+   "name": "quote priced",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote priced with sku, image and shipping method",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99,
+     "sku": "TEE-M-BLK",
+     "image_url": "https://cdn.shopify.com/s/files/tee.jpg"
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ],
+    "shipping_method": "Standard (3-5 business days)"
+   }
+  },
+  {
+   "name": "quote priced, no options and no requirements",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/mug",
+     "title": "Mug",
+     "selections": {},
+     "quantity": 1,
+     "unit_price": 12.0
+    },
+    "breakdown": {
+     "items": 12.0,
+     "shipping": 4.5,
+     "tax": 0,
+     "merchant_fees": 0,
+     "merchant_total": 16.5
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-15",
+    "requires": []
+   }
+  },
+  {
+   "name": "quote priced, merchant fee named and the parts add up",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 2.5,
+     "merchant_total": 74.46
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote priced, unit price rounding within a cent",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "x",
+     "title": "Pack of three",
+     "selections": {},
+     "quantity": 3,
+     "unit_price": 33.333
+    },
+    "breakdown": {
+     "items": 99.99,
+     "shipping": 0,
+     "tax": 0,
+     "merchant_fees": 0,
+     "merchant_total": 99.99
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-15",
+    "requires": []
+   }
+  },
+  {
+   "name": "quote priced, breakdown off by less than a cent",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.965
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote requires every vocabulary slot",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "person",
+     "document",
+     "recipient",
+     "address.shipping",
+     "contact.phone",
+     "loyalty"
+    ]
+   }
+  },
+  {
+   "name": "quote options required",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "options_required",
+    "menu": [
+     {
+      "name": "Size",
+      "values": [
+       "S",
+       "M",
+       "L"
+      ],
+      "unavailable": [
+       "L"
+      ]
+     },
+     {
+      "name": "Color",
+      "values": [
+       "Black",
+       "White"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "quote unavailable, out of stock",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "unavailable",
+    "reason": "out_of_stock"
+   }
+  },
+  {
+   "name": "quote unavailable, not shippable",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "unavailable",
+    "reason": "not_shippable"
+   }
+  },
+  {
+   "name": "quote unavailable, quantity limit",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "unavailable",
+    "reason": "quantity_limit"
+   }
+  },
+  {
+   "name": "quote unavailable, not found",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "unavailable",
+    "reason": "not_found"
+   }
+  },
+  {
+   "name": "quote without a status",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote status outside enum",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "sold_out",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote priced without an item",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote item ref empty",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote item without a title",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote item selections is an array",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": [
+      "M",
+      "Black"
+     ],
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote item quantity zero",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 0,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote item quantity fractional",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 1.5,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote item unit price zero",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 0
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote priced without a breakdown",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote breakdown missing tax",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote breakdown shipping negative",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": -1,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 64.97
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote breakdown shipping is a string",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": "6.99",
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote breakdown merchant total zero",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "x",
+     "title": "Free sample",
+     "selections": {},
+     "quantity": 1,
+     "unit_price": 0.01
+    },
+    "breakdown": {
+     "items": 0,
+     "shipping": 0,
+     "tax": 0,
+     "merchant_fees": 0,
+     "merchant_total": 0
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-15",
+    "requires": []
+   }
+  },
+  {
+   "name": "quote breakdown does not add up",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 72.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote breakdown hides an unnamed fee",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 74.46
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote items is not unit price times quantity",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 2,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote priced without a currency",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote priced in another currency",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "EUR",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote without service_ends_at",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote service_ends_at not ISO",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "10/21/2026",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote service_ends_at not a calendar date",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-02-30",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   }
+  },
+  {
+   "name": "quote without requires",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21"
+   }
+  },
+  {
+   "name": "quote requires is not an array",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": "recipient"
+   }
+  },
+  {
+   "name": "quote requires a slot outside the vocabulary",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "USD",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "passport"
+    ]
+   }
+  },
+  {
+   "name": "quote options required with an empty menu",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "options_required",
+    "menu": []
+   }
+  },
+  {
+   "name": "quote options required without a menu",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "options_required"
+   }
+  },
+  {
+   "name": "quote menu option without a name",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "options_required",
+    "menu": [
+     {
+      "name": "",
+      "values": [
+       "S",
+       "M"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "quote menu option with no values",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "options_required",
+    "menu": [
+     {
+      "name": "Size",
+      "values": []
+     }
+    ]
+   }
+  },
+  {
+   "name": "quote menu value is an empty string",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "options_required",
+    "menu": [
+     {
+      "name": "Size",
+      "values": [
+       "S",
+       ""
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "quote menu unavailable is not an array",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "options_required",
+    "menu": [
+     {
+      "name": "Size",
+      "values": [
+       "S",
+       "M"
+      ],
+      "unavailable": "M"
+     }
+    ]
+   }
+  },
+  {
+   "name": "quote unavailable without a reason",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "unavailable"
+   }
+  },
+  {
+   "name": "quote unavailable reason outside enum",
+   "task": "quote",
+   "valid": false,
+   "payload": {
+    "status": "unavailable",
+    "reason": "discontinued"
+   }
+  },
+  {
+   "name": "buy walk reached the cashier",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy walk behind a wall, no cashier",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": false,
+    "blocker": "account-required"
+   }
+  },
+  {
+   "name": "buy paid by the payer",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": true,
+    "paymentStatus": "paid",
+    "reference": "#1043"
+   }
+  },
+  {
+   "name": "buy clean failure",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "failed",
+    "reason": "shipping form refused the postal code"
+   }
+  },
+  {
+   "name": "buy cashier with a free line",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      },
+      {
+       "title": "Free sticker",
+       "quantity": 1,
+       "amount": 0
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy payClicked stringly",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": "false",
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy paymentStatus outside enum",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "ok",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy missing everything",
+   "task": "buy",
+   "valid": false,
+   "payload": {}
+  },
+  {
+   "name": "buy payReachable is not a boolean",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": "yes",
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy blocker is not a string",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": false,
+    "blocker": true
+   }
+  },
+  {
+   "name": "buy clicked Pay it could not reach",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": true,
+    "paymentStatus": "unverified",
+    "payReachable": false
+   }
+  },
+  {
+   "name": "buy reached Pay without a cashier",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true
+   }
+  },
+  {
+   "name": "buy cashier total zero",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 0,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier total missing",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier without a currency",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier in another currency",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "CAD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier with no lines",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier lines missing",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier line without a title",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier line quantity zero",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee",
+       "quantity": 0,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier line quantity fractional",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee",
+       "quantity": 1.5,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier line amount negative",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee",
+       "quantity": 3,
+       "amount": -1
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   }
+  },
+  {
+   "name": "buy cashier without the ship-to postal code",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "buy cashier ship-to postal code empty",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": ""
+    }
    }
   }
  ]

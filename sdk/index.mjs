@@ -1,4 +1,7 @@
 // @brij/recipe-sdk v1 — the recipe CONTRACT as code.
+// Speaks protocol 1 (air: search / offer-details / book) and protocol 2
+// (shop.v1: quote / buy — README §"Protocol v2"). One SDK for both: the
+// signals, gates and evidence are the same machinery, only the tasks differ.
 //
 // Everything a recipe says to the runtime goes through here: the machine
 // signals (__FULFILLER_*), the exit codes, the screenshot evidence, and the
@@ -40,6 +43,12 @@ export const EXIT = {
   checkoutFail: 4, // could not reach the checkout
   returnFail: 5,   // round-trip return selection failed
   paxRejected: 6,  // passenger form rejected — stop, never hammer
+  // Protocol 2 NAMES for the same two numbers. Aliases, not new codes: the
+  // runtime's refund-vs-uncertain logic keys on the number, and a second
+  // number meaning "gone" would be one more the runner had to learn — and
+  // could forget. A shop recipe says what it means; the runner reads 3 and 6.
+  itemUnavailable: 3,    // = offerGone: the product/variant is no longer buyable as quoted
+  fulfilmentRejected: 6, // = paxRejected: the shipping/recipient form was refused — stop, never hammer
   accountRequired: 8, // the supplier will not sell to a guest, and this run holds no account
                    // (no ACCOUNT_PASSWORD): the wall was reached and photographed, nothing
                    // was submitted. Clean — nothing was paid.
@@ -56,6 +65,13 @@ export const EXIT = {
 // manifest as protocol_version. The runtime refuses a version it does not
 // support and treats a v/manifest mismatch as a malformed signal.
 export const PROTOCOL_VERSION = 1;
+// Protocol 2 is a set of TASKS, not a new wire: quote and buy are stamped
+// v:2, the air tasks keep v:1 whatever else the SDK learns. Keyed by task
+// rather than read from the manifest because the SDK never sees the
+// manifest — and because a v1 recipe must keep emitting exactly what it
+// emitted yesterday, byte for byte, without re-declaring anything.
+export const PROTOCOL_VERSION_V2 = 2;
+export const TASK_PROTOCOL = Object.freeze({ search: 1, "offer-details": 1, book: 1, quote: 2, buy: 2 });
 
 // ── narration + timing ──
 export const L = s => console.log(s);
@@ -86,6 +102,46 @@ const currencyError = (what, currency) =>
   !isStr(currency) ? `${what}: currency is required (the marketplace sells ${SELLABLE_CURRENCY} and converts nothing)`
   : currency.toUpperCase() !== SELLABLE_CURRENCY ? `${what}: currency ${currency} is not sellable — this marketplace settles in ${SELLABLE_CURRENCY}`
   : "";
+
+// ── protocol 2 (shop.v1) vocabulary ──
+// The requirement slots a quote may say the buy will need. A closed list:
+// the marketplace asks the BUYER for exactly these before it funds anything,
+// so a slot it does not know is a question nobody can be asked — and a buy
+// that then stalls on a form with the customer's money in escrow.
+export const REQUIREMENT_SLOTS = Object.freeze(["person", "document", "recipient", "address.shipping", "contact.phone", "loyalty"]);
+const UNAVAILABLE_REASONS = ["out_of_stock", "not_shippable", "quantity_limit", "not_found"];
+const QUOTE_STATUSES = ["priced", "options_required", "unavailable"];
+// Money is compared to the cent. The float slack is not a second tolerance:
+// 59.97 + 6.99 + 5.00 is not exactly 71.96 in binary, and a rule that
+// refused honest arithmetic would teach authors to round until it passed.
+const CENT = 0.01, FLOAT_SLACK = 1e-9;
+const withinCent = (a, b) => Math.abs(a - b) <= CENT + FLOAT_SLACK;
+const isObj = x => !!x && typeof x === "object" && !Array.isArray(x);
+// A calendar date, not a date-shaped string: 2026-02-30 is refused (Go's
+// time.Parse("2006-01-02") refuses it too, which keeps the corpus honest).
+const isISODate = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) &&
+  !Number.isNaN(Date.parse(s + "T00:00:00Z")) && new Date(s + "T00:00:00Z").toISOString().slice(0, 10) === s;
+
+// The cashier a buy walk reports when it reached Pay. It is what the PAYER
+// compares against the order before the human is paged (currency, total ≤
+// engaged, one line, the quantity, the ZIP), so every field is one of those
+// comparisons: a cashier the payer cannot compare is a cashier it cannot pass.
+const cashierErrors = c => {
+  const errs = [];
+  if (!isObj(c)) return ["cashier must be an object"];
+  if (!isNum(c.merchant_total) || c.merchant_total <= 0) errs.push("cashier.merchant_total must be a number > 0");
+  const cur = currencyError("cashier", c.currency);
+  if (cur) errs.push(cur);
+  if (!Array.isArray(c.lines) || c.lines.length === 0) errs.push("cashier.lines must be a non-empty array (the order summary as the merchant shows it)");
+  else c.lines.forEach((l, i) => {
+    if (!isObj(l)) { errs.push(`cashier.lines[${i}] must be an object`); return; }
+    if (!isStr(l.title)) errs.push(`cashier.lines[${i}].title must be a non-empty string`);
+    if (!Number.isInteger(l.quantity) || l.quantity < 1) errs.push(`cashier.lines[${i}].quantity must be an integer >= 1`);
+    if (!isNum(l.amount) || l.amount < 0) errs.push(`cashier.lines[${i}].amount must be a number >= 0`);
+  });
+  if (!isStr(c.ship_to_postal_code)) errs.push("cashier.ship_to_postal_code must be a non-empty string (read from the checkout, never echoed from the input)");
+  return errs;
+};
 
 export const validators = {
   search(p) {
@@ -126,13 +182,99 @@ export const validators = {
     if (p.payClicked === true && p.payReachable === false) errs.push("payClicked cannot be true when payReachable is false");
     return errs;
   },
+
+  // ── protocol 2 ──
+  // quote: a FIRM price for one item, shipped to one place — or the reason
+  // there is none. Three outcomes, and each is an answer the marketplace can
+  // act on: charge this, ask the buyer this, or tell them no. A quote is
+  // what the customer's escrow is sized from, so its arithmetic is checked
+  // here rather than trusted: a breakdown that does not add up is a total
+  // nobody can explain to the person paying it.
+  quote(p) {
+    const errs = [];
+    if (!QUOTE_STATUSES.includes(p.status)) return [`status must be ${QUOTE_STATUSES.join("|")}`];
+    if (p.status === "options_required") {
+      // The buyer must choose (size, colour…) before anything can be priced.
+      // A menu with nothing on it is not a question, it is a dead end.
+      if (!Array.isArray(p.menu) || p.menu.length === 0) return ["menu must be a non-empty array when status is options_required"];
+      p.menu.forEach((m, i) => {
+        if (!isObj(m)) { errs.push(`menu[${i}] must be an object`); return; }
+        if (!isStr(m.name)) errs.push(`menu[${i}].name must be a non-empty string`);
+        if (!Array.isArray(m.values) || m.values.length === 0 || !m.values.every(isStr)) errs.push(`menu[${i}].values must be a non-empty array of non-empty strings`);
+        if (m.unavailable !== undefined && (!Array.isArray(m.unavailable) || !m.unavailable.every(v => typeof v === "string"))) errs.push(`menu[${i}].unavailable must be an array of strings when present`);
+      });
+      return errs;
+    }
+    if (p.status === "unavailable") {
+      if (!UNAVAILABLE_REASONS.includes(p.reason)) errs.push(`reason must be ${UNAVAILABLE_REASONS.join("|")} when status is unavailable`);
+      return errs;
+    }
+    // priced
+    const it = p.item;
+    let itemNumeric = false;
+    if (!isObj(it)) errs.push("item must be an object");
+    else {
+      if (!isStr(it.ref)) errs.push("item.ref must be a non-empty string");
+      if (!isStr(it.title)) errs.push("item.title must be a non-empty string");
+      if (!isObj(it.selections)) errs.push("item.selections must be an object ({} for a product with no options)");
+      if (!Number.isInteger(it.quantity) || it.quantity < 1) errs.push("item.quantity must be an integer >= 1");
+      if (!isNum(it.unit_price) || it.unit_price <= 0) errs.push("item.unit_price must be a number > 0");
+      if (it.sku !== undefined && typeof it.sku !== "string") errs.push("item.sku must be a string when present");
+      if (it.image_url !== undefined && typeof it.image_url !== "string") errs.push("item.image_url must be a string when present");
+      itemNumeric = Number.isInteger(it.quantity) && it.quantity >= 1 && isNum(it.unit_price) && it.unit_price > 0;
+    }
+    const b = p.breakdown;
+    if (!isObj(b)) errs.push("breakdown must be an object {items, shipping, tax, merchant_fees, merchant_total}");
+    else {
+      let numeric = true;
+      for (const k of ["items", "shipping", "tax", "merchant_fees", "merchant_total"]) {
+        if (!isNum(b[k]) || b[k] < 0) { errs.push(`breakdown.${k} must be a number >= 0`); numeric = false; }
+      }
+      if (numeric) {
+        if (b.merchant_total <= 0) errs.push("breakdown.merchant_total must be > 0");
+        // The parts must make the whole: a fee the recipe did not name is
+        // money the customer pays for nothing anyone can point to.
+        if (!withinCent(b.items + b.shipping + b.tax + b.merchant_fees, b.merchant_total)) {
+          errs.push(`breakdown does not add up: items+shipping+tax+merchant_fees = ${+(b.items + b.shipping + b.tax + b.merchant_fees).toFixed(4)}, merchant_total = ${b.merchant_total}`);
+        }
+        if (itemNumeric && !withinCent(it.unit_price * it.quantity, b.items)) {
+          errs.push(`breakdown.items (${b.items}) is not unit_price × quantity (${it.unit_price} × ${it.quantity})`);
+        }
+      }
+    }
+    const cur = currencyError("quote", p.currency);
+    if (cur) errs.push(cur);
+    if (p.shipping_method !== undefined && typeof p.shipping_method !== "string") errs.push("shipping_method must be a string when present");
+    // When the service is over (the parcel delivered) — what the escrow's
+    // hold is sized from. Required: a hold nobody sized is one that expires
+    // with the parcel still in a van, and expiry is what refunds the buyer.
+    if (!isISODate(p.service_ends_at)) errs.push("service_ends_at must be a date YYYY-MM-DD");
+    if (!Array.isArray(p.requires)) errs.push(`requires must be an array of requirement slots (${REQUIREMENT_SLOTS.join(", ")}) — [] when none`);
+    else p.requires.forEach((r, i) => { if (!REQUIREMENT_SLOTS.includes(r)) errs.push(`requires[${i}]: "${r}" is not a requirement slot (${REQUIREMENT_SLOTS.join(", ")})`); });
+    return errs;
+  },
+  // buy: book's rules — the same money facts decide refund vs uncertain —
+  // plus the cashier. A walk that says it reached Pay must say what Pay
+  // would charge: that is the one thing the payer checks before a human is
+  // paged, and "reachable" without it is a claim the payer cannot verify.
+  buy(p) {
+    const errs = validators.book(p);
+    if (p.payReachable === true && p.cashier === undefined) errs.push("cashier is required when payReachable is true");
+    // Present without payReachable:true it is still checked: a malformed
+    // cashier is malformed wherever it sits, and "ignored unless" is how a
+    // bad one ends up read by something later.
+    if (p.cashier !== undefined) errs.push(...cashierErrors(p.cashier));
+    if (p.reference !== undefined && typeof p.reference !== "string") errs.push("reference must be a string when present");
+    return errs;
+  },
 };
 
 // ── signal emission — the ONLY way a recipe should talk to the runner ──
 // emitResult(task, payload) VALIDATES, stamps {v, task} (the SDK imposes
-// both — payload values are ignored), and refuses a malformed result with
-// EXIT.malformed. Financial conservatism: a malformed BOOK result still
-// emits a minimal well-formed line carrying payClicked first, so the
+// both — payload values are ignored; v is the TASK's protocol, 1 for the air
+// tasks and 2 for quote/buy), and refuses a malformed result with
+// EXIT.malformed. Financial conservatism: a malformed BOOK or BUY result
+// still emits a minimal well-formed line carrying payClicked first, so the
 // runner never loses the one fact that decides refund vs uncertain.
 export const emitResult = (task, payload) => {
   const validate = validators[task];
@@ -140,16 +282,16 @@ export const emitResult = (task, payload) => {
   const errs = validate(payload ?? {});
   if (errs.length) {
     errs.forEach(e => L("malformed result: " + e));
-    if (task === "book") {
+    if (task === "book" || task === "buy") {
       console.log(MARKERS.result + JSON.stringify({
-        v: PROTOCOL_VERSION, task, payClicked: payload?.payClicked === true,
+        v: TASK_PROTOCOL[task], task, payClicked: payload?.payClicked === true,
         paymentStatus: "unverified", malformed: true,
       }));
     }
     process.exitCode = EXIT.malformed;
     return false;
   }
-  console.log(MARKERS.result + JSON.stringify({ ...payload, v: PROTOCOL_VERSION, task }));
+  console.log(MARKERS.result + JSON.stringify({ ...payload, v: TASK_PROTOCOL[task], task }));
   return true;
 };
 export const emitApproval = obj => console.log(MARKERS.approval + JSON.stringify({ ...obj, v: PROTOCOL_VERSION, task: "approval" }));
@@ -234,7 +376,14 @@ export const recordPayload = (url, body) => {
 // Fields are named, not sniffed: `gender` is "M" and `nationality` is "FR",
 // and redacting two-letter values by value would eat every "M" in the page.
 // Anything shorter than 4 characters is left alone for the same reason.
-const PII_FIELDS = ["given", "surname", "dob", "idnum", "idexp", "contact_email", "contact_phone", "email", "phone"];
+//
+// buy.v1 adds the parcel's destination: the recipient (given, surname, phone
+// — already named above) and the street (line1, line2, city). region,
+// postal_code and country are KEPT: they are not an identity on their own,
+// they are exactly what a debugger needs to see which shipping rule fired,
+// and "CA"/"US" are the two-letter values the ≥4 rule exists to spare.
+const PII_FIELDS = ["given", "surname", "dob", "idnum", "idexp", "contact_email", "contact_phone", "email", "phone",
+  "line1", "line2", "city"];
 const SECRET_ENV = ["CARD_NUMBER", "CARD_CVV", "CARD_EXPIRATION", "LLM_RUN_TOKEN", "BB_CONNECT_URL", "ACCOUNT_PASSWORD"];
 
 const caseSecrets = () => {
@@ -672,7 +821,8 @@ export const readInput = task => {
   if (!raw) throw new Error("RECIPE_INPUT is required — a recipe has no environment fallback");
   let doc;
   try { doc = JSON.parse(raw); } catch (e) { throw new Error("RECIPE_INPUT is not JSON: " + e.message); }
-  const want = { search: "air-search.v1", "offer-details": "air-offer-details.v1", book: "air-book.v1" }[task];
+  const want = { search: "air-search.v1", "offer-details": "air-offer-details.v1", book: "air-book.v1",
+    quote: "quote.v1", buy: "buy.v1" }[task];
   if (!want) throw new Error(`unknown TASK ${task}`);
   if (doc.schema !== want) throw new Error(`RECIPE_INPUT declares ${doc.schema}, TASK=${task} speaks ${want}`);
   return doc.data || {};
@@ -784,7 +934,10 @@ export const connectLocalBrowser = async ({ needsBrowser = false } = {}) => {
 //
 // stagehand is imported lazily, like playwright below, so the toy recipe and
 // the validators stay dependency-free.
-export const connectRuntimeBrowser = async ({ task, needsBrowser = task === "book" } = {}) => {
+// buy defaults like book: it is the purchase walk, and the checkout forms it
+// fills are where act() earns its keep. A cardless walk passes
+// needsBrowser:false explicitly, exactly as a cardless book does.
+export const connectRuntimeBrowser = async ({ task, needsBrowser = task === "book" || task === "buy" } = {}) => {
   const connectUrl = (process.env.BB_CONNECT_URL || "").trim();
   const sessionId = (process.env.BB_SESSION_ID || "").trim();
   const extensionId = (process.env.BB_EXTENSION_ID || "").trim();
@@ -800,7 +953,7 @@ export const connectRuntimeBrowser = async ({ task, needsBrowser = task === "boo
     return { browser: null, sessionId: sessionId || "runner-owned", connectUrl };
   }
   if (!extensionId) {
-    throw new Error("BB_EXTENSION_ID is required for book: Stagehand attaches to the runner's session by its preloaded extension");
+    throw new Error("BB_EXTENSION_ID is required for book/buy: Stagehand attaches to the runner's session by its preloaded extension");
   }
   const { localBrowser } = await import("@browserbasehq/stagehand");
   const browser = await localBrowser.connect({ cdpUrl: connectUrl, extensionId });
@@ -843,7 +996,7 @@ export const attachStagehand = async ({ browser, modelName = process.env.SH_MODE
 // the dev Chromium this call started, and the only thing a recipe may close;
 // `remote` says a real proxy and solveCaptchas are in play, which is what
 // decides how long to wait on a captcha (nobody is watching a headless run).
-export const connectBrowser = async ({ task, needsBrowser = task === "book" } = {}) => {
+export const connectBrowser = async ({ task, needsBrowser = task === "book" || task === "buy" } = {}) => {
   if (process.env.BB === "1" || process.env.BB === "true") {
     const session = await connectRuntimeBrowser({ task, needsBrowser });
     L(`Browserbase session from the runtime (${session.sessionId}) — keyless${session.browser ? ", Stagehand attached" : ""}`);
@@ -894,4 +1047,383 @@ export const captureJSON = async (cdpUrl, routes, { log = () => {} } = {}) => {
     count: name => hits[name] || 0,
     close: async () => { try { await browser.close(); } catch {} },
   };
+};
+
+// ── shopify: the helpers a Shopify store recipe needs (protocol 2) ─────────
+// Why here and not in the recipe: the lint allows a recipe exactly one
+// relative import, this file, so a helper worth sharing across stores lives
+// in the SDK where it is reviewed once. Thousands of storefronts run the same
+// platform; the second Shopify recipe should be a manifest and twenty lines.
+//
+// Two halves, and they deserve different trust:
+//
+//   PURE (tested offline in test-sdk.mjs): the product document → the
+//   variant, the option menu, the item description; the checkout's order
+//   summary TEXT → total, lines, breakdown. Deterministic, no page.
+//
+//   PAGE (best-effort): navigation and checkout form filling. Everything
+//   that touches the checkout DOM is marked UNVERIFIED — to confirm on the
+//   Shopify spike. Shopify's one-page checkout is shared across stores but
+//   its markup is not a contract; treat these as a starting point to be
+//   pinned against a live store, not as fact.
+//
+// No fetch anywhere: the product document is read by NAVIGATING to it
+// (page.goto) and reading the body — the browser's network, which
+// Browserbase's allowedDomains bounds, never the recipe's own.
+
+// A product URL's handle: /products/<handle>, also under a collection
+// (/collections/x/products/<handle>). Anything else is not a product page.
+const shopifyHandle = url => {
+  try {
+    const m = new URL(url).pathname.match(/\/products\/([^/?#.]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+  } catch { return null; }
+};
+
+// ?variant=<id> on a product URL is Shopify's own way to name one variant —
+// a ref that carries it needs no selections at all.
+const shopifyVariantParam = url => {
+  try { const v = new URL(url).searchParams.get("variant"); return /^\d+$/.test(v || "") ? v : null; } catch { return null; }
+};
+
+// The option NAMES in position order. /products/<h>.js serves options as
+// objects ({name, position, values}); older themes and the Liquid object
+// carry bare strings. Both are read so a recipe never has to care which.
+const shopifyOptionNames = product =>
+  (Array.isArray(product?.options) ? product.options : []).map(o => (typeof o === "string" ? o : o?.name) || "").slice(0, 3);
+
+// Shopify's placeholder for a product without options: one option "Title",
+// one variant "Default Title". It is not a choice anybody makes, so it is
+// neither a selection to echo nor a menu to show.
+const isDefaultTitleOption = (product) => {
+  const names = shopifyOptionNames(product);
+  const vs = Array.isArray(product?.variants) ? product.variants : [];
+  return names.length === 1 && /^title$/i.test(names[0]) && vs.length === 1 && /^default title$/i.test(String(vs[0].option1 || vs[0].title || ""));
+};
+
+const norm = s => String(s ?? "").trim().toLowerCase();
+
+// variant.price: INTEGER CENTS in the .js document, a DECIMAL STRING
+// ("19.99") in the .json one. Reading one as the other is a 100× error in
+// either direction, so the shape decides, never a guess on magnitude.
+const shopifyPrice = price => {
+  if (typeof price === "number" && Number.isFinite(price)) return Math.round(price) / 100;
+  if (typeof price === "string" && /^\d+(\.\d+)?$/.test(price.trim())) {
+    return price.includes(".") ? Math.round(parseFloat(price) * 100) / 100 : parseInt(price, 10) / 100;
+  }
+  return null;
+};
+
+// Money as the checkout prints it: "$1,234.56", "USD $60.11", "60.11".
+// Returns the number, or null — never 0 for "unreadable": 0 is a price.
+// Only a figure that LOOKS like money counts — a currency symbol before it,
+// or two decimals — so "Standard (3-5 days)" on the shipping row is never
+// read as a $3 shipping fee.
+const MONEY = /[$€£]\s?(\d{1,3}(?:,\d{3})+|\d+)(\.\d{2})?(?![\d])|(?:^|[^\d.,])(\d{1,3}(?:,\d{3})+|\d+)(\.\d{2})(?![\d])/;
+const parseMoney = s => {
+  const m = String(s ?? "").match(MONEY);
+  if (!m) return null;
+  const whole = m[1] ?? m[3], cents = m[1] !== undefined ? m[2] : m[4];
+  return parseFloat(whole.replace(/,/g, "") + (cents || ""));
+};
+const hasMoney = s => /[$€£]\s?\d|\d\.\d{2}\b/.test(String(s ?? ""));
+
+// The value on a LABELLED row of the order summary: the first money amount
+// on the label's own line or within the next three, stopping at the next
+// label. Never "the largest number on the page": the largest number is as
+// often a "compare at" price, a subtotal before discount, or a phone number.
+const SUMMARY_LABELS = {
+  subtotal: /^subtotal\b/i,
+  shipping: /^shipping\b/i,
+  tax: /^(estimated\s+)?tax(es)?\b/i,
+  total: /^total\b/i,
+};
+const labelledRow = (lines, re) => {
+  const i = lines.findIndex(l => re.test(l));
+  if (i < 0) return null;
+  const window = [lines[i].replace(re, "")];
+  for (let j = i + 1; j < Math.min(lines.length, i + 4); j++) {
+    if (Object.values(SUMMARY_LABELS).some(r => r.test(lines[j]))) break;
+    window.push(lines[j]);
+  }
+  return window.join("\n");
+};
+
+// One order-summary row's text → {title, quantity, amount}. The quantity is
+// read from a "Quantity" label or the badge (a bare integer line), and is
+// null when neither is there — never defaulted to 1: the payer refuses a
+// quantity that is not the order's, and a default would pass that check for
+// a cart it never read.
+const parseSummaryLine = text => {
+  const lines = String(text ?? "").split("\n").map(l => l.trim()).filter(Boolean);
+  if (!lines.some(hasMoney)) return null; // a header row, or an image with no price
+  let quantity = null;
+  for (let i = 0; i < lines.length; i++) {
+    const q = lines[i].match(/^quantity\s*:?\s*(\d+)?$/i);
+    if (q) { quantity = parseInt(q[1] || lines[i + 1] || "", 10); break; }
+  }
+  if (quantity === null || Number.isNaN(quantity)) {
+    const badge = lines.find(l => /^\d{1,3}$/.test(l));
+    quantity = badge ? parseInt(badge, 10) : null;
+  }
+  const moneyLines = lines.filter(hasMoney);
+  const amount = parseMoney(moneyLines[moneyLines.length - 1]); // the row's own total sits last
+  const title = lines.find(l => !hasMoney(l) && !/^\d{1,3}$/.test(l) && !/^quantity\b/i.test(l)) || "";
+  return { title, quantity: Number.isInteger(quantity) ? quantity : null, amount };
+};
+
+export const shopify = {
+  handle: shopifyHandle,
+  variantParam: shopifyVariantParam,
+  parsePrice: shopifyPrice,
+  parseMoney,
+  parseSummaryLine,
+
+  // The product document, by NAVIGATION: <origin>/products/<handle>.js is
+  // public on every Shopify store and carries every variant with its price
+  // and availability — the JSON the product page itself is rendered from, so
+  // nothing is scraped. `origin` and `url` are attached for describe().
+  async product(page, url) {
+    const handle = shopifyHandle(url);
+    if (!handle) throw new Error(`shopify.product: not a product URL: ${url}`);
+    const origin = new URL(url).origin;
+    await page.goto(`${origin}/products/${encodeURIComponent(handle)}.js`, { waitUntil: "domcontentloaded" });
+    const text = await page.evaluate(() => (document.body ? document.body.innerText : ""));
+    return shopify.parseProduct(text, { origin, url });
+  },
+  parseProduct(text, { origin = "", url = "" } = {}) {
+    let json;
+    try { json = JSON.parse(String(text ?? "").trim()); } catch (e) { throw new Error("shopify.product: the product document is not JSON: " + e.message); }
+    // /products/<h>.json wraps it in {product}; .js does not.
+    const product = isObj(json?.product) ? json.product : json;
+    if (!isObj(product) || !Array.isArray(product.variants)) throw new Error("shopify.product: no variants in the product document");
+    return { ...product, origin, url };
+  },
+
+  // The ONE variant the selections name, or null. Null covers both "no
+  // variant matches" and "several do" on purpose: an ambiguous selection is
+  // not resolved by picking the first — that is how a recipe ships the
+  // wrong size — it is answered with the menu (status options_required).
+  // Matching is case-insensitive and trimmed ("m" = "M "), option names
+  // included. A product with a single variant needs no selections.
+  pickVariant(product, selections = {}) {
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
+    const names = shopifyOptionNames(product).map(norm);
+    const want = Object.entries(selections || {});
+    if (!want.length) return variants.length === 1 ? variants[0] : null;
+    const slots = [];
+    for (const [k, v] of want) {
+      const i = names.indexOf(norm(k));
+      if (i < 0) return null; // an option this product does not have: not a match, never ignored
+      slots.push([`option${i + 1}`, norm(v)]);
+    }
+    const hits = variants.filter(vr => slots.every(([key, v]) => norm(vr[key]) === v));
+    return hits.length === 1 ? hits[0] : null;
+  },
+
+  // The option menu for options_required: every option with its values in
+  // the store's order, and the values no AVAILABLE variant carries. Per
+  // option, not per combination — "M is sold out in red" is the buy's
+  // problem, reported then as out_of_stock; the menu says what exists.
+  menu(product) {
+    if (isDefaultTitleOption(product)) return [];
+    const variants = Array.isArray(product?.variants) ? product.variants : [];
+    return shopifyOptionNames(product).map((name, i) => {
+      const key = `option${i + 1}`;
+      const declared = product.options[i];
+      const values = (typeof declared === "object" && Array.isArray(declared?.values) && declared.values.length)
+        ? declared.values.map(String)
+        : [...new Set(variants.map(v => v[key]).filter(v => v != null).map(String))];
+      const unavailable = values.filter(val => !variants.some(v => v.available !== false && norm(v[key]) === norm(val)));
+      return { name, values, unavailable };
+    });
+  },
+
+  // The quote's `item` for one variant, minus quantity (the order's, not the
+  // product's). `ref` names the variant itself (?variant=<id>) so the buy
+  // lands on exactly what was priced even if the store reorders its options.
+  describe(product, variant) {
+    const names = shopifyOptionNames(product);
+    const selections = {};
+    if (!isDefaultTitleOption(product)) names.forEach((n, i) => { const v = variant?.[`option${i + 1}`]; if (n && v != null) selections[n] = String(v); });
+    const variantTitle = String(variant?.title || "");
+    const title = !variantTitle || /^default title$/i.test(variantTitle) ? String(product?.title || "") : `${product?.title || ""} - ${variantTitle}`;
+    const base = product?.origin && product?.handle ? `${product.origin}/products/${product.handle}` : (product?.url || "");
+    let image = variant?.featured_image?.src || (typeof product?.featured_image === "string" ? product.featured_image : product?.featured_image?.src) || "";
+    if (image.startsWith("//")) image = "https:" + image; // Shopify's CDN URLs are protocol-relative
+    const out = { ref: base ? `${base}?variant=${variant?.id}` : String(variant?.id ?? ""), title, selections, unit_price: shopifyPrice(variant?.price) };
+    if (variant?.sku) out.sku = String(variant.sku);
+    if (image) out.image_url = image;
+    return out;
+  },
+
+  // Shopify's cart permalink: /cart/<variant>:<qty> builds a fresh cart with
+  // exactly that line and redirects to the checkout. Exactly that line is
+  // the point — a session cart holding something a previous run added would
+  // be bought too, and "lines != 1" is a refusal at the payer.
+  cartPermalink(origin, variantId, quantity) {
+    if (!/^\d+$/.test(String(variantId))) throw new Error(`shopify: variant id must be numeric, got ${variantId}`);
+    if (!Number.isInteger(quantity) || quantity < 1) throw new Error(`shopify: quantity must be an integer >= 1, got ${quantity}`);
+    return `${String(origin).replace(/\/$/, "")}/cart/${variantId}:${quantity}`;
+  },
+  async addToCart(page, variantId, quantity, { origin } = {}) {
+    const from = origin || new URL(await page.url()).origin;
+    await page.goto(shopify.cartPermalink(from, variantId, quantity), { waitUntil: "domcontentloaded" });
+    return page.url();
+  },
+
+  // UNVERIFIED — to confirm on the Shopify spike. The permalink normally
+  // lands on /checkouts/…; a store with a cart page in between is sent to
+  // /checkout, which redirects to the live checkout of the current cart.
+  async toCheckout(page, { timeoutMs = 20000 } = {}) {
+    const onCheckout = async () => /\/checkouts?\//.test(await page.url());
+    if (!(await until(onCheckout, 5000))) {
+      await page.goto(`${new URL(await page.url()).origin}/checkout`, { waitUntil: "domcontentloaded" });
+    }
+    if (!(await until(onCheckout, timeoutMs))) throw new Error("shopify.toCheckout: never reached /checkouts/");
+    return page.url();
+  },
+
+  // The checkout form, as data: which field, which selectors, which value.
+  // Pure so the mapping from buy.v1 to Shopify's form is testable without a
+  // page. Selectors: name= first (Shopify's one-page checkout), then the
+  // autocomplete tokens every checkout that honours autofill carries.
+  // UNVERIFIED — to confirm on the Shopify spike.
+  fieldPlan(fulfilment = {}, email = "") {
+    const r = fulfilment.recipient || {}, a = fulfilment["address.shipping"] || {};
+    const f = (field, value, selectors, kind = "input") => ({ field, value, selectors, kind });
+    return [
+      // Country first: changing it re-renders the form (zone list, postcode
+      // label), and a field filled before that is a field filled twice.
+      f("countryCode", a.country, ['select[name="countryCode"]', 'select[autocomplete="shipping country"]'], "select"),
+      f("email", email, ['input[name="email"]', 'input#email', 'input[autocomplete="shipping email"]', 'input[autocomplete="email"]']),
+      f("firstName", r.given, ['input[name="firstName"]', 'input[autocomplete="shipping given-name"]']),
+      f("lastName", r.surname, ['input[name="lastName"]', 'input[autocomplete="shipping family-name"]']),
+      f("address1", a.line1, ['input[name="address1"]', 'input[autocomplete="shipping address-line1"]']),
+      f("address2", a.line2, ['input[name="address2"]', 'input[autocomplete="shipping address-line2"]']),
+      f("city", a.city, ['input[name="city"]', 'input[autocomplete="shipping address-level2"]']),
+      f("zone", a.region, ['select[name="zone"]', 'select[autocomplete="shipping address-level1"]'], "select"),
+      f("postalCode", a.postal_code, ['input[name="postalCode"]', 'input[autocomplete="shipping postal-code"]']),
+      f("phone", r.phone, ['input[name="phone"]', 'input[autocomplete="shipping tel"]']),
+    ].filter(x => x.value != null && String(x.value) !== "");
+  },
+
+  // UNVERIFIED — to confirm on the Shopify spike. Fills one field of the
+  // plan. Inputs are TYPED through the page's locator when it has one (React
+  // checkouts ignore a bare value assignment), and set through the native
+  // setter + input/change events otherwise. Selects match the option's value
+  // OR its label, case-insensitively: Shopify's zone list has value "CA",
+  // label "California", and the document carries the code.
+  async fillField(page, { selectors, value, kind }) {
+    const v = String(value);
+    if (kind === "input" && typeof page.locator === "function") {
+      for (const sel of selectors) {
+        try { await page.locator(sel).fill(v, { timeout: 4000 }); return sel; } catch {}
+      }
+    }
+    return await page.evaluate(({ selectors, v, kind }) => {
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (!el) continue;
+        let next = v;
+        if (kind === "select") {
+          const want = v.trim().toLowerCase();
+          const opt = [...el.options].find(o => o.value.trim().toLowerCase() === want) ||
+            [...el.options].find(o => (o.textContent || "").trim().toLowerCase() === want);
+          if (!opt) return null;
+          next = opt.value;
+        }
+        const proto = kind === "select" ? HTMLSelectElement.prototype : HTMLInputElement.prototype;
+        Object.getOwnPropertyDescriptor(proto, "value").set.call(el, next);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return sel;
+      }
+      return null;
+    }, { selectors, v, kind });
+  },
+
+  // UNVERIFIED — to confirm on the Shopify spike. Fills the whole shipping
+  // form from buy.v1's fulfilment + contact_email. Returns what was filled
+  // and what was not found; the recipe decides whether a missing field is
+  // fatal (a missing address2 is not, a missing postalCode is).
+  async fillShipping(page, fulfilment, email) {
+    const filled = [], missing = [];
+    for (const step of shopify.fieldPlan(fulfilment, email)) {
+      const hit = await shopify.fillField(page, step).catch(() => null);
+      (hit ? filled : missing).push(step.field);
+    }
+    return { filled, missing };
+  },
+
+  // UNVERIFIED — to confirm on the Shopify spike. Prices a ship-to that is
+  // only country/region/ZIP (quote.v1 has no street) and waits for the
+  // summary to show a shipping figure. Some stores will not rate a parcel
+  // without a street; the spike decides what a quote does then — never an
+  // invented street address.
+  async priceTo(page, shipTo, { timeoutMs = 15000 } = {}) {
+    const plan = shopify.fieldPlan({ "address.shipping": {
+      country: shipTo?.country, region: shipTo?.region, postal_code: shipTo?.postal_code } }, "");
+    for (const step of plan) await shopify.fillField(page, step).catch(() => null);
+    let summary = null;
+    await until(async () => { summary = await shopify.readCashier(page); return summary.shipping !== null && summary.merchant_total !== null; }, timeoutMs, 750);
+    return summary ?? (await shopify.readCashier(page));
+  },
+
+  // UNVERIFIED — to confirm on the Shopify spike. Reads the order summary:
+  // its text (the region labelled as the summary, else <aside>, else the
+  // body), its line rows (role=row / tr inside it), and the ZIP the form
+  // actually holds — read back, never echoed from the input, because the
+  // payer's ZIP check is only worth something if it compares two sources.
+  async readCashier(page) {
+    const raw = await page.evaluate(() => {
+      const region = document.querySelector('[aria-label*="order summary" i]') ||
+        document.querySelector('[aria-labelledby*="summary" i]') || document.querySelector("aside") || document.body;
+      const rows = [...region.querySelectorAll('[role="row"], tr')].map(r => r.innerText || "");
+      const zip = document.querySelector('input[name="postalCode"], input[autocomplete="shipping postal-code"]');
+      return { text: region.innerText || "", rows, zip: zip ? zip.value : "" };
+    });
+    return shopify.parseCashier(raw);
+  },
+
+  // Pure: the summary's text → {merchant_total, currency, subtotal,
+  // shipping, tax, lines, ship_to_postal_code}. Every figure comes from its
+  // LABELLED row. currency is the ISO code printed beside the total, or null:
+  // "$" alone is also CAD, AUD, and a dozen others, and a currency nobody
+  // read is the one the marketplace refuses.
+  parseCashier({ text = "", rows = [], zip = "" } = {}) {
+    const lines = String(text).split("\n").map(l => l.trim()).filter(Boolean);
+    const at = key => { const row = labelledRow(lines, SUMMARY_LABELS[key]); return row === null ? null : row; };
+    const money = key => { const row = at(key); return row === null ? null : parseMoney(row); };
+    const totalRow = at("total");
+    const shippingRow = at("shipping");
+    const shipping = shippingRow !== null && /\bfree\b/i.test(shippingRow) && !hasMoney(shippingRow) ? 0 : money("shipping");
+    const code = totalRow ? (totalRow.match(/\b([A-Z]{3})\b/) || [])[1] || null : null;
+    return {
+      merchant_total: totalRow === null ? null : parseMoney(totalRow),
+      currency: code,
+      subtotal: money("subtotal"),
+      shipping,
+      tax: money("tax"),
+      lines: rows.map(parseSummaryLine).filter(Boolean),
+      ship_to_postal_code: String(zip || "").trim(),
+    };
+  },
+
+  // Pure: a read summary → the quote's breakdown, or null with the reason.
+  // merchant_fees is what the total holds beyond items, shipping and tax
+  // (duties, a handling fee) — named rather than dropped, so the breakdown
+  // adds up. A NEGATIVE residual is a discount this code did not read, and
+  // is refused rather than folded into a number.
+  breakdown(summary) {
+    const s = summary || {};
+    for (const k of ["subtotal", "shipping", "merchant_total"]) {
+      if (!isNum(s[k])) return { breakdown: null, reason: `order summary: no readable ${k}` };
+    }
+    const tax = isNum(s.tax) ? s.tax : 0;
+    const round = n => Math.round(n * 100) / 100;
+    const fees = round(s.merchant_total - s.subtotal - s.shipping - tax);
+    if (fees < -CENT) return { breakdown: null, reason: `order summary: total is ${-fees} below its parts (an unread discount)` };
+    return { breakdown: { items: s.subtotal, shipping: s.shipping, tax, merchant_fees: Math.max(0, fees), merchant_total: s.merchant_total }, reason: "" };
+  },
 };

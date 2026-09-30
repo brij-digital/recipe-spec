@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "__FULFILLER_RESULT__ — task: buy (protocol v2, shop.v1)",
+  "description": "Every rule of the v1 book result, plus the cashier: a walk that reports payReachable:true must say what Pay would charge, because that is what the payer checks against the order before a human is paged.",
+  "type": "object",
+  "required": ["v", "task", "payClicked", "paymentStatus"],
+  "properties": {
+    "v": { "const": 2 },
+    "task": { "const": "buy" },
+    "payClicked": { "type": "boolean" },
+    "paymentStatus": { "enum": ["paid", "failed", "unverified"] },
+    "malformed": { "type": "boolean" },
+    "payReachable": {
+      "type": "boolean",
+      "description": "The walk located Pay and found it present, enabled and uncovered. false = a wall stood in the way (see blocker)."
+    },
+    "blocker": { "type": "string" },
+    "reason": { "type": "string" },
+    "reference": { "type": "string", "description": "The merchant's order number — emitted by the PAYER, never by a walk. A join key for the confirmation email, not proof of payment." },
+    "cashier": {
+      "type": "object",
+      "required": ["merchant_total", "currency", "lines", "ship_to_postal_code"],
+      "properties": {
+        "merchant_total": { "type": "number", "exclusiveMinimum": 0 },
+        "currency": { "type": "string", "pattern": "^[Uu][Ss][Dd]$" },
+        "lines": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["title", "quantity", "amount"],
+            "properties": {
+              "title": { "type": "string", "minLength": 1 },
+              "quantity": { "type": "integer", "minimum": 1 },
+              "amount": { "type": "number", "minimum": 0 }
+            }
+          }
+        },
+        "ship_to_postal_code": { "type": "string", "minLength": 1, "description": "Read back from the checkout form, never echoed from the input." }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "payClicked": { "const": true } }, "required": ["payClicked"] },
+      "then": { "not": { "properties": { "payReachable": { "const": false } }, "required": ["payReachable"] } }
+    },
+    {
+      "if": { "properties": { "payReachable": { "const": true } }, "required": ["payReachable"] },
+      "then": { "required": ["cashier"] }
+    }
+  ]
+}

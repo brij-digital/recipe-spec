@@ -1,0 +1,39 @@
+# quote.v1 — the PUBLIC input contract of a firm price for ONE item.
+# Protocol 2 (signal v:2). Transport: the RECIPE_INPUT document, exactly as
+# air-search.v1 — {schema, task, data}, no per-field environment fallback.
+#
+#   RECIPE_INPUT='{"schema":"quote.v1","task":"quote","data":{
+#     "product":"shop",
+#     "item":{"ref":"https://store.example/products/classic-tee","selections":{"Size":"M"},"quantity":2},
+#     "context":{"ship_to":{"country":"US","region":"CA","postal_code":"94107"}}}}'
+#
+# GLOBAL across verticals: `quote` is the task, `product` says which kind of
+# thing is quoted, and `context` carries what that kind needs to be priced.
+# Today the only product is `shop` (a physical item shipped to an address).
+#
+# The price you answer is what the customer's escrow is sized from, so it
+# must be the CHECKOUT's price for this destination — item, shipping, tax and
+# whatever else the merchant adds — never the product page's sticker price.
+schema: quote.v1
+task: quote
+required:
+  - product           # "shop"
+  - item.ref          # what to price: a product URL on this recipe's domain
+                      # (a ?variant=<id> on it names the variant outright),
+                      # or an id this recipe's own discovery produced
+  - item.quantity     # integer 1..10 for shop — the count the checkout must hold
+  # shop only — a shipping quote needs a destination, and these three are
+  # what every merchant rates on. No street: a quote is asked before the
+  # buyer has given one, and it is NOT invented to get a rate.
+  - context.ship_to.country      # ISO 3166-1 alpha-2, upper-case ("US")
+  - context.ship_to.region       # ISO 3166-2 subdivision code without the country ("CA")
+  - context.ship_to.postal_code  # as the buyer wrote it ("94107")
+optional:
+  - item.selections   # {option name: value}, e.g. {"Size":"M","Color":"Black"}.
+                      # {} or absent = none given. Match names and values
+                      # case-insensitively; if they do not name exactly ONE
+                      # variant, answer status "options_required" with the
+                      # menu — never pick one for the buyer.
+runtime_provides:
+  - browser_session
+  - llm

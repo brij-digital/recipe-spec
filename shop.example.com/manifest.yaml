@@ -1,0 +1,62 @@
+# shop.example.com — the toy STORE. Protocol 2 (shop.v1): quote + buy of one
+# physical item, shipped. Every field below is read by the runtime (README
+# §"Protocol v2").
+protocol_version: 2
+domain: shop.example.com
+recipe: recipe.mjs
+product: shop                    # what this recipe sells; the only protocol-2 product today
+
+capabilities:                    # protocol 2 declares quote + buy (and optionally search)
+  quote:
+    input_schema: quote.v1
+  buy:
+    input_schema: buy.v1
+
+# The requirement slots a buy on this store will need, from the closed
+# vocabulary (person, document, recipient, address.shipping, contact.phone,
+# loyalty). The marketplace asks the buyer for exactly these before it funds
+# anything; a quote's own `requires` may narrow them per item, never widen.
+requires: [recipient, address.shipping]
+
+cashier: shopify                 # which payer adapter checks and pays this checkout
+                                 # (the payer, not your recipe, holds the card)
+flow: guest
+kind: browser
+
+oracle:
+  type: email                    # settlement truth = the merchant's confirmation email,
+  template: shop_example_v1      # DKIM-verified, delivered to the order's own address
+  confirmed_pattern: '(?i)\border\s+#?\d+\s+(?:is\s+)?confirmed\b|thank\s+you\s+for\s+your\s+(?:order|purchase)'
+  reference_pattern: '(?i)order\s+#?(\d{3,10})'          # group 1 = the merchant's order number
+  cancelled_subject_pattern: '(?i)\b(cancel(?:led|ed)?|refund(?:ed)?)\b'
+  # A real confirmation (subject + body excerpt) the patterns are checked
+  # against at submission: a pattern that does not match its own sample is
+  # refused before anyone relies on it.
+  sample: |
+    Subject: Order #1043 confirmed
+    Thank you for your purchase! We're getting your order ready to be shipped.
+    Order #1043 — Classic Tee - M / Black × 2
+
+coverage:
+  countries: [US]                # ship-to countries this recipe quotes; nothing else is routed here
+  max_quantity: 10               # per order; the contract's ceiling for shop is 10
+
+# What the conformance walk (and the daily canary) quotes and walks to the
+# cashier. Real product URLs on this domain, with the options they need.
+conformance:
+  products:
+    - ref: https://shop.example.com/products/classic-tee
+      selections: { Size: M, Color: Black }
+      quantity: 2
+
+payment:
+  currency: USD                  # the marketplace settles USD and converts nothing
+  max_amount: 300                # above this, orders are not routed here
+
+known_traps:
+  - "the toy store has no traps; a real one has many — write them down here"
+
+author:
+  partner: example
+  wallet: 9a6pGJsb9gUoYJVWvrBDGxm2Yvqti9AKs6tEL9maZBG7
+  primary: true

@@ -1,0 +1,54 @@
+# buy.v1 — the PUBLIC input contract of a purchase of ONE item.
+# Protocol 2 (signal v:2). Transport: the RECIPE_INPUT document.
+#
+#   RECIPE_INPUT='{"schema":"buy.v1","task":"buy","data":{
+#     "product":"shop",
+#     "item":{"ref":"https://store.example/products/classic-tee?variant=4242","selections":{"Size":"M"},"quantity":2},
+#     "engaged":{"merchant_total":156.44,"currency":"USD"},
+#     "fulfilment":{"recipient":{"given":"Ada","surname":"Lovelace","phone":"+14155550100"},
+#                   "address.shipping":{"line1":"2 Market St","line2":"Apt 4","city":"San Francisco",
+#                                       "region":"CA","postal_code":"94107","country":"US"}},
+#     "contact_email":"o-<order>@bookings.brij.fi"}}'
+#
+# YOUR RECIPE NEVER PAYS. A buy is two runs on one browser session: your
+# recipe WALKS — cart, checkout, shipping form, up to the cashier — and
+# stops before Pay; then the marketplace's own PAYER takes the session,
+# checks the cashier against this order, pages a human, and pays. The card
+# is never in your process, in any mode. What you owe is the walk, and an
+# honest `cashier` in your result (see schemas/result-buy.json).
+#
+# The fulfilment slots are named by the requirement vocabulary your quote
+# declared in `requires` (recipient, address.shipping, …): you are handed
+# exactly what you said you would need, and nothing is asked for that you
+# did not.
+schema: buy.v1
+task: buy
+required:
+  - product                   # "shop"
+  - item.ref                  # the ref your quote answered with
+  - item.quantity             # integer 1..10 for shop
+  - engaged.merchant_total    # what the customer engaged: your quote's
+                              # merchant_total. Informational for the walk —
+                              # the payer, not the recipe, refuses a cashier
+                              # above it (+0.01) before the human gate
+  - engaged.currency          # "USD"
+  - contact_email             # the order's oracle address (o-<id>@bookings.brij.fi):
+                              # the checkout's email, or the merchant's
+                              # confirmation never reaches settlement
+  # shop only
+  - fulfilment.recipient.given
+  - fulfilment.recipient.surname
+  - fulfilment["address.shipping"].line1
+  - fulfilment["address.shipping"].city
+  - fulfilment["address.shipping"].region       # ISO 3166-2 code without the country ("CA")
+  - fulfilment["address.shipping"].postal_code
+  - fulfilment["address.shipping"].country      # ISO 3166-1 alpha-2 ("US")
+optional:
+  - item.selections                     # as quoted
+  - fulfilment.recipient.phone          # E.164 — fill it if the checkout asks
+  - fulfilment["address.shipping"].line2
+runtime_provides:
+  - browser_session
+  - llm
+  # NOT payment_method, approval or otp: those belong to the payer, which
+  # runs after your walk under its own profile and no author code.

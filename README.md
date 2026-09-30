@@ -16,6 +16,9 @@ never published.
 - [`example.com/`](example.com/) — a toy recipe that speaks the whole
   contract **offline** (`node example.com/recipe.mjs` — no browser, no keys).
   Read it top to bottom: it is the tutorial.
+- [`shop.example.com/`](shop.example.com/) — the same, for protocol 2: a toy
+  Shopify store answering `quote` and walking `buy` (see
+  [Protocol v2](#protocol-v2-quote-and-buy-shopv1)).
 - This README is the normative text.
 
 ---
@@ -287,6 +290,7 @@ but cheap; the structured failure reason authors iterate fastest on.
 | `4` | could not reach the checkout |
 | `5` | round-trip return selection failed |
 | `6` | passenger form rejected — stop, never hammer |
+| | Protocol 2 names the same two numbers: `EXIT.itemUnavailable` = `3`, `EXIT.fulfilmentRejected` = `6` |
 | `7` | `EXIT.uncertain` (alias `EXIT.malformed`) — the run's claims cannot be trusted: a result that violates the schema, or **any unconfirmed outcome after the Pay click** (exception, 3-D Secure timeout, no readable confirmation/reference) |
 
 Any nonzero exit **before Pay** is a clean failure. The runtime decides
@@ -394,13 +398,14 @@ honest one is.
 
 ## 2-bis. Protocol version and validation
 
-Every signal the SDK emits is stamped `{ v: 1, task: "…" }` — the SDK
-imposes both, payload values are ignored. `emitResult(task, payload)`
+Every result the SDK emits is stamped `{ v, task }` — `v: 1` for `search`,
+`offer-details` and `book`, `v: 2` for `quote` and `buy` — the SDK imposes
+both, payload values are ignored. `emitResult(task, payload)`
 validates the payload against the task's shape (executable validators in
 `sdk/index.mjs`, documentary JSON Schemas in `schemas/`, shared corpus in
 `fixtures/corpus.json` — CI verifies all implementations agree on that
 corpus) and refuses a malformed result with exit 7. Financial rule: a
-malformed BOOK result still emits a minimal well-formed line carrying
+malformed BOOK (or BUY) result still emits a minimal well-formed line carrying
 `payClicked` first, and the runtime classifies any malformed/unreadable
 post-Pay outcome as UNCERTAIN — never an automatic refund. Run the corpus
 offline: `node test-sdk.mjs`.
@@ -430,6 +435,135 @@ So "what is published is what runs" is a string comparison: the SDK at the
 `recipe_spec_sha` from `GET /recipes` must hash to its `sdk_version`, and the
 source you read back must hash to its `version`.
 
+## Protocol v2: quote and buy (shop.v1)
+
+Protocol 2 sells **one product on one merchant website** — a Shopify store
+first. Its two tasks are global across verticals: `quote` prices one item
+for one destination, `buy` walks the purchase to the cashier. Everything in
+§2 still holds (one `RECIPE_INPUT` document, USD only, signals, exit codes,
+case files, lint); what changes is below. The toy is
+[`shop.example.com/`](shop.example.com/), offline, like `example.com`.
+
+### The manifest
+
+```yaml
+protocol_version: 2
+domain: store.example            # the folder name, as always
+product: shop
+capabilities:                    # quote + buy, required; search optional
+  quote: { input_schema: quote.v1 }
+  buy:   { input_schema: buy.v1 }
+requires: [recipient, address.shipping]   # what a buy will need (vocabulary below)
+cashier: shopify                 # which payer adapter checks and pays this checkout
+oracle:
+  type: email
+  template: store_v1
+  confirmed_pattern: '…'         # the confirmation email says the order is placed
+  reference_pattern: '…'         # group 1 = the merchant's order number
+  cancelled_subject_pattern: '…'
+  sample: |                      # a real confirmation the patterns are checked against
+    Subject: Order #1043 confirmed …
+coverage: { countries: [US], max_quantity: 10 }
+conformance:
+  products:                      # what the dry run and the canary quote and walk
+    - { ref: https://store.example/products/tee, selections: { Size: M }, quantity: 2 }
+payment: { currency: USD }
+author: { wallet: … }
+```
+
+**The requirement vocabulary** is closed: `person`, `document`, `recipient`,
+`address.shipping`, `contact.phone`, `loyalty`. The marketplace asks the
+buyer for exactly the slots you name before it funds anything — a slot
+outside the list is a question nobody can be asked, and is refused.
+
+### `quote` — [`schemas/input/quote.v1.yaml`](schemas/input/quote.v1.yaml)
+
+Input: `product`, `item.ref` (a product URL on your domain, `?variant=<id>`
+allowed), `item.quantity` (1..10), optional `item.selections`
+(`{"Size":"M"}`), and for `shop` `context.ship_to.{country, region,
+postal_code}` — no street; never invent one to get a rate.
+
+Result (`emitResult("quote", …)`, stamped `v: 2`) — exactly one `status`:
+
+| `status` | Carries | When |
+|---|---|---|
+| `priced` | `item {ref, title, selections, quantity, unit_price, sku?, image_url?}`, `breakdown {items, shipping, tax, merchant_fees, merchant_total}`, `currency: "USD"`, `shipping_method?`, `service_ends_at` (`YYYY-MM-DD`), `requires` | the CHECKOUT's price for this destination |
+| `options_required` | `menu: [{name, values, unavailable?}]`, non-empty | the selections do not name exactly one variant — never pick one for the buyer |
+| `unavailable` | `reason`: `out_of_stock` · `not_shippable` · `quantity_limit` · `not_found` | a clean no |
+
+The arithmetic is checked, to the cent: `items + shipping + tax +
+merchant_fees = merchant_total`, and `unit_price × quantity = items`. A fee
+the checkout adds that you did not name is money the customer pays for
+nothing anyone can point to. `service_ends_at` is when the parcel will have
+arrived — the escrow hold is sized from it, so be honest and generous. The
+runner also checks that `selections` and `quantity` echo the input.
+
+### `buy` — [`schemas/input/buy.v1.yaml`](schemas/input/buy.v1.yaml)
+
+Input: the same `item`, `engaged {merchant_total, currency}` (your quote's
+total, as the customer funded it), `fulfilment.recipient {given, surname,
+phone?}`, `fulfilment["address.shipping"] {line1, line2?, city, region,
+postal_code, country}`, and `contact_email` — the order's own address. Give
+it to the checkout as the email, or the confirmation never reaches
+settlement.
+
+**Your recipe never pays.** A buy is two runs on one browser session:
+
+1. **your walk** — cart, checkout, shipping form, up to the cashier; stop
+   before Pay. You receive no card, no approval file, no OTP file, in any
+   mode.
+2. **the payer** — the marketplace's own code, no author file in it. It
+   takes the session, re-reads the cashier and **refuses before any human
+   is paged** a checkout that is not USD, totals more than `engaged` +
+   $0.01, has more than one line, a quantity or a ZIP that is not the
+   order's, or any ticked paid add-on (shipping protection, gift wrap, tip,
+   upsell). Then the human gate, then the card, then Pay and 3-D Secure.
+
+Result (`emitResult("buy", …)`, stamped `v: 2`): every `book` rule
+(`payClicked`, `paymentStatus`, `payReachable`, `blocker`), plus — when
+`payReachable: true` — the **cashier** the payer will check:
+
+```json
+{"payClicked": false, "paymentStatus": "unverified", "payReachable": true,
+ "cashier": {"merchant_total": 50.47, "currency": "USD",
+             "lines": [{"title": "Classic Tee - M / Black", "quantity": 2, "amount": 39.98}],
+             "ship_to_postal_code": "94107"}}
+```
+
+Read every figure from the page: the total from its labelled **Total** row
+(never the largest number), the lines from the order summary, the ZIP from
+the form. A cashier echoed from the input would pass a check it was meant
+to fail. `reference` (the order number) is the payer's to report, not yours.
+A malformed `buy` result still emits the minimal `payClicked`-first line.
+
+Exits: `EXIT.itemUnavailable` (3) when the variant is gone or sold out at
+buy time, `EXIT.fulfilmentRejected` (6) when the shipping form refuses the
+address — stop, never hammer.
+
+### The `shopify` helpers
+
+The lint allows one relative import, the SDK, so the store helpers live
+there: `import { shopify } from "../sdk/index.mjs"`.
+
+| Helper | Does |
+|---|---|
+| `product(page, url)` | navigates to `<origin>/products/<handle>.js` and parses it (no `fetch`: the browser's network, bounded by the session's allowed domains) |
+| `pickVariant(product, selections)` | the ONE variant matching every selection (case-insensitive), or `null` if none or several |
+| `menu(product)` | `[{name, values, unavailable}]` for `options_required` |
+| `describe(product, variant)` | the quote's `item` minus `quantity` — price converted from cents |
+| `addToCart(page, variantId, qty)` · `toCheckout(page)` | the cart permalink `/cart/<id>:<qty>`, a cart with exactly that line |
+| `priceTo(page, shipTo)` · `fillShipping(page, fulfilment, email)` · `readCashier(page)` | the one-page checkout — **unverified against a live store yet**: treat as a starting point |
+| `parseCashier`, `breakdown`, `fieldPlan`, … | the pure halves of the above, tested in `test-sdk.mjs` |
+
+### What a protocol-2 recipe must never do
+
+- click Pay, or wait for an approval — your walk is handed no card and no
+  gate, and `payClicked` in a walk is always `false`;
+- pick a variant the buyer did not name, or buy a quantity they did not ask;
+- leave anything else in the cart, or tick an add-on;
+- report a cashier it did not read off the page;
+- invent a street, a phone number or a recipient to get a price.
+
 ## 3. The manifest
 
 One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com/manifest.yaml).
@@ -437,7 +571,7 @@ One `manifest.yaml` per domain — see [`example.com/manifest.yaml`](example.com
 | Key | Meaning |
 |---|---|
 | `domain` | the supplier host — and the identity everything else derives from. The marketplace TIER this recipe quotes and settles under is the domain itself: do NOT declare `tier`, it is refused at load. A declared one can only restate `domain` or be wrong, and when it is wrong it is wrong in three places at once (the daily canary asks whether that tier sells, the settlement engine keys its email template by it, the fulfiller quotes under it) |
-| `protocol_version` | the SDK/signal protocol the recipe speaks (current: `1`); the runtime refuses versions it does not support and treats a signal `v` that contradicts the manifest as malformed |
+| `protocol_version` | the SDK/signal protocol the recipe speaks (`1`: air search/offer-details/book; `2`: quote/buy, see [Protocol v2](#protocol-v2-quote-and-buy-shopv1)); the runtime refuses versions it does not support and treats a signal `v` that contradicts the manifest as malformed |
 | `recipe` | entry file |
 | `capabilities` | which tasks the recipe implements, each referencing a versioned input contract from [`schemas/input/`](schemas/input/) (`input_schema: air-book.v1`, plus `accepts` for book targets) — public field names, never transport env ([ADR 0001](adr/0001-discover-and-fulfill.md)); absent = all three air.v1 schemas with `accepts: [offer_ref]` (the current behavior). Descriptive in protocol 1 |
 | `author` | `wallet` is your identity and is REQUIRED: it must equal the wallet paying for the submission, and it is what lets you read the recipe back (`GET /recipes/source/<domain>`). `partner` beside it is a label. A domain's manifest must live in the folder named after it — the folder IS the identity |

@@ -24,14 +24,20 @@ console.log("ALL PASS");
 {
   const fs = await import("node:fs");
   const assert = (cond, msg) => { if (!cond) { console.log("manifest↔schema FAILED: " + msg); process.exit(1); } };
-  const manifest = fs.readFileSync(new URL("./example.com/manifest.yaml", import.meta.url), "utf8");
-  const capBlock = manifest.match(/^capabilities:[^\n]*\n((?:[ \t]+[^\n]*\n?)+)/m)?.[1] || "";
-  const refs = []; let task = null;
-  for (const line of capBlock.split("\n")) {
-    const t = line.match(/^ {2}([A-Za-z-]+):/); if (t) { task = t[1]; continue; }
-    const sch = line.match(/^\s+input_schema:\s*(\S+)/); if (sch && task) refs.push([task, sch[1]]);
+  // Both toys: the air one (protocol 1, three tasks) and the store
+  // (protocol 2, quote + buy) — each must name schemas that exist.
+  const refs = [];
+  for (const [dir, min] of [["example.com", 3], ["shop.example.com", 2]]) {
+    const manifest = fs.readFileSync(new URL(`./${dir}/manifest.yaml`, import.meta.url), "utf8");
+    const capBlock = manifest.match(/^capabilities:[^\n]*\n((?:[ \t]+[^\n]*\n?)+)/m)?.[1] || "";
+    const mine = []; let task = null;
+    for (const line of capBlock.split("\n")) {
+      const t = line.match(/^ {2}([A-Za-z-]+):/); if (t) { task = t[1]; continue; }
+      const sch = line.match(/^\s+input_schema:\s*(\S+)/); if (sch && task) mine.push([task, sch[1]]);
+    }
+    assert(mine.length >= min, `${dir} manifest declares fewer than ${min} input_schema refs`);
+    refs.push(...mine);
   }
-  assert(refs.length >= 3, "example manifest declares no input_schema refs");
   for (const [t, name] of refs) {
     const path = new URL(`./schemas/input/${name}.yaml`, import.meta.url);
     assert(fs.existsSync(path), `schemas/input/${name}.yaml missing (referenced by ${t})`);
@@ -208,4 +214,195 @@ import { gunzipSync } from "node:zlib";
   check("case: nothing was written outside the run's directory", !existsSync("case.state.json"));
 }
 console.log(`SDK unit total (with case files): ${unit - unitFailed}/${unit} passed`);
+if (unitFailed) process.exit(1);
+
+// ── protocol 2 (shop.v1) ──────────────────────────────────────────────────
+// The corpus above already pins the quote/buy validators case by case. What
+// it cannot pin: which `v` each task is stamped with, the minimal line a
+// malformed BUY still emits (the refund-vs-uncertain fact), the schemas
+// readInput accepts, the Shopify pure helpers, and the redaction of a
+// parcel's destination.
+import { TASK_PROTOCOL, PROTOCOL_VERSION, PROTOCOL_VERSION_V2, REQUIREMENT_SLOTS, readInput, shopify, validators as V } from "./sdk/index.mjs";
+{
+  check("v2: EXIT.itemUnavailable is offerGone (3)", EXIT.itemUnavailable === 3 && EXIT.offerGone === 3);
+  check("v2: EXIT.fulfilmentRejected is paxRejected (6)", EXIT.fulfilmentRejected === 6 && EXIT.paxRejected === 6);
+  check("v2: PROTOCOL_VERSION stays 1 for v1 recipes", PROTOCOL_VERSION === 1 && PROTOCOL_VERSION_V2 === 2);
+  check("v2: tasks map to their protocol", TASK_PROTOCOL.book === 1 && TASK_PROTOCOL.search === 1 && TASK_PROTOCOL["offer-details"] === 1 && TASK_PROTOCOL.quote === 2 && TASK_PROTOCOL.buy === 2);
+  check("v2: the requirement vocabulary is the contract's six slots",
+    JSON.stringify(REQUIREMENT_SLOTS) === JSON.stringify(["person", "document", "recipient", "address.shipping", "contact.phone", "loyalty"]));
+
+  // emitResult prints and sets process.exitCode, so it runs in a child.
+  const emitChild = (task, payload) => spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { emitResult } from "${new URL("./sdk/index.mjs", import.meta.url).pathname}";
+    emitResult(${JSON.stringify(task)}, ${JSON.stringify(payload)});
+  `], { encoding: "utf8" });
+  const lineOf = r => { const l = r.stdout.split("\n").find(x => x.startsWith(MARKERS.result)); return l ? JSON.parse(l.slice(MARKERS.result.length)) : null; };
+  const q = lineOf(emitChild("quote", { status: "unavailable", reason: "out_of_stock", v: 9, task: "search" }));
+  check("v2: quote is stamped v:2, task:quote (payload values ignored)", q?.v === 2 && q?.task === "quote");
+  const b1 = lineOf(emitChild("book", { payClicked: false, paymentStatus: "failed" }));
+  check("v2: book is still stamped v:1", b1?.v === 1 && b1?.task === "book");
+  const bad = emitChild("buy", { payClicked: true, paymentStatus: "paid", payReachable: true /* no cashier */ });
+  const minimal = lineOf(bad);
+  check("v2: a malformed buy still emits the minimal line, payClicked first",
+    minimal?.v === 2 && minimal?.task === "buy" && minimal?.payClicked === true && minimal?.paymentStatus === "unverified" && minimal?.malformed === true);
+  check("v2: a malformed buy exits malformed (7)", bad.status === 7);
+  const badQuote = emitChild("quote", { status: "priced" });
+  check("v2: a malformed quote emits NO result line", lineOf(badQuote) === null && badQuote.status === 7);
+
+  // readInput: the two new schemas, and still no cross-talk.
+  const saved = process.env.RECIPE_INPUT;
+  process.env.RECIPE_INPUT = JSON.stringify({ schema: "quote.v1", task: "quote", data: { product: "shop" } });
+  check("v2: readInput accepts quote.v1 for TASK=quote", readInput("quote").product === "shop");
+  let threw = false; try { readInput("buy"); } catch { threw = true; }
+  check("v2: readInput refuses quote.v1 for TASK=buy", threw);
+  process.env.RECIPE_INPUT = JSON.stringify({ schema: "buy.v1", task: "buy", data: { product: "shop" } });
+  check("v2: readInput accepts buy.v1 for TASK=buy", readInput("buy").product === "shop");
+  process.env.RECIPE_INPUT = saved;
+}
+
+// Shopify's product document, as /products/<handle>.js serves it.
+const TEE = {
+  id: 1, title: "Classic Tee", handle: "classic-tee", featured_image: "//cdn.shopify.com/tee.jpg",
+  options: [{ name: "Size", position: 1, values: ["S", "M", "L"] }, { name: "Color", position: 2, values: ["Black", "White"] }],
+  variants: [
+    { id: 11, title: "S / Black", option1: "S", option2: "Black", price: 1999, sku: "S-B", available: true },
+    { id: 12, title: "M / Black", option1: "M", option2: "Black", price: 1999, sku: "M-B", available: true, featured_image: { src: "//cdn.shopify.com/m-black.jpg" } },
+    { id: 13, title: "M / White", option1: "M", option2: "White", price: 2050, sku: "", available: true },
+    { id: 14, title: "L / Black", option1: "L", option2: "Black", price: 2199, available: false },
+  ],
+};
+const MUG = { id: 2, title: "Mug", handle: "mug", options: [{ name: "Title", position: 1, values: ["Default Title"] }],
+  variants: [{ id: 21, title: "Default Title", option1: "Default Title", price: 1200, available: true }] };
+{
+  const prod = shopify.parseProduct(JSON.stringify(TEE), { origin: "https://store.test", url: "https://store.test/products/classic-tee" });
+  check("shopify: handle from a product URL", shopify.handle("https://store.test/products/classic-tee?variant=12") === "classic-tee");
+  check("shopify: handle under a collection", shopify.handle("https://store.test/collections/tees/products/classic-tee") === "classic-tee");
+  check("shopify: no handle on a non-product URL", shopify.handle("https://store.test/pages/about") === null);
+  check("shopify: ?variant= names the variant", shopify.variantParam("https://store.test/products/classic-tee?variant=12") === "12");
+  check("shopify: .json's {product} wrapper is unwrapped", shopify.parseProduct(JSON.stringify({ product: TEE })).handle === "classic-tee");
+  let notJson = false; try { shopify.parseProduct("<html>404</html>"); } catch { notJson = true; }
+  check("shopify: a page that is not the product document is an error, not an empty product", notJson);
+
+  check("shopify: pickVariant on full selections", shopify.pickVariant(prod, { Size: "M", Color: "Black" })?.id === 12);
+  check("shopify: pickVariant is case-insensitive and trimmed", shopify.pickVariant(prod, { " size": "m ", COLOR: "white" })?.id === 13);
+  check("shopify: pickVariant is null when ambiguous (M in two colours)", shopify.pickVariant(prod, { Size: "M" }) === null);
+  check("shopify: pickVariant resolves a partial selection that names one variant", shopify.pickVariant(prod, { Color: "White" })?.id === 13);
+  check("shopify: pickVariant is null for a missing combination", shopify.pickVariant(prod, { Size: "S", Color: "White" }) === null);
+  check("shopify: pickVariant is null for an option the product lacks", shopify.pickVariant(prod, { Size: "M", Material: "Cotton" }) === null);
+  check("shopify: pickVariant with no selections on a multi-variant product is null", shopify.pickVariant(prod, {}) === null);
+  check("shopify: a single-variant product needs no selections", shopify.pickVariant(MUG, {})?.id === 21 && shopify.pickVariant(MUG)?.id === 21);
+  check("shopify: pickVariant returns a sold-out variant (the caller answers out_of_stock)", shopify.pickVariant(prod, { Size: "L", Color: "Black" })?.available === false);
+
+  const menu = shopify.menu(prod);
+  check("shopify: menu lists options in order with the store's values",
+    JSON.stringify(menu.map(m => [m.name, m.values])) === JSON.stringify([["Size", ["S", "M", "L"]], ["Color", ["Black", "White"]]]));
+  check("shopify: menu marks a value no available variant carries", JSON.stringify(menu[0].unavailable) === '["L"]' && menu[1].unavailable.length === 0);
+  check("shopify: menu from bare-string options derives values from variants",
+    JSON.stringify(shopify.menu({ ...TEE, options: ["Size", "Color"] })[1].values) === '["Black","White"]');
+  check("shopify: a Default Title product has no menu", shopify.menu(MUG).length === 0);
+  check("shopify: the menu validates as options_required", V.quote({ status: "options_required", menu }).length === 0);
+
+  const d = shopify.describe(prod, prod.variants[1]);
+  check("shopify: describe converts .js cents to dollars", d.unit_price === 19.99);
+  check("shopify: describe names the variant in the ref", d.ref === "https://store.test/products/classic-tee?variant=12");
+  check("shopify: describe carries title, selections and sku",
+    d.title === "Classic Tee - M / Black" && JSON.stringify(d.selections) === '{"Size":"M","Color":"Black"}' && d.sku === "M-B");
+  check("shopify: describe makes a protocol-relative image absolute", d.image_url === "https://cdn.shopify.com/m-black.jpg");
+  check("shopify: describe omits an empty sku", !("sku" in shopify.describe(prod, prod.variants[2])));
+  const m = shopify.describe(MUG, MUG.variants[0]);
+  check("shopify: a Default Title product has no selections and a plain title", m.title === "Mug" && JSON.stringify(m.selections) === "{}" && m.unit_price === 12);
+  check("shopify: .json's decimal-string price is dollars, not cents", shopify.parsePrice("19.99") === 19.99 && shopify.parsePrice(1999) === 19.99);
+
+  check("shopify: cart permalink", shopify.cartPermalink("https://store.test/", 12, 2) === "https://store.test/cart/12:2");
+  let refused = 0;
+  for (const [id, qty] of [["12;x", 1], [12, 0], [12, 1.5]]) { try { shopify.cartPermalink("https://store.test", id, qty); } catch { refused++; } }
+  check("shopify: permalink refuses a non-numeric id and a bad quantity", refused === 3);
+
+  const plan = shopify.fieldPlan({ recipient: { given: "Ada", surname: "Lovelace", phone: "+14155550100" },
+    "address.shipping": { line1: "2 Market St", city: "San Francisco", region: "CA", postal_code: "94107", country: "US" } }, "o-1@bookings.brij.fi");
+  check("shopify: the field plan starts with the country (it re-renders the form)", plan[0].field === "countryCode" && plan[0].kind === "select");
+  check("shopify: the field plan maps buy.v1 onto the checkout",
+    ["email", "firstName", "lastName", "address1", "city", "zone", "postalCode", "phone"].every(f => plan.some(x => x.field === f)) &&
+    plan.find(x => x.field === "email").value === "o-1@bookings.brij.fi" && plan.find(x => x.field === "zone").value === "CA");
+  check("shopify: an absent line2 is not in the plan", !plan.some(x => x.field === "address2"));
+
+  // The order summary, as innerText. The Total is read from its LABEL — the
+  // compare-at price above it is larger and must not win.
+  const summary = shopify.parseCashier({
+    text: "Order summary\n2\nClassic Tee\nM / Black\n$59.99\n$39.98\nSubtotal · 2 items\n$39.98\nShipping\nStandard (3-5 business days)\n$6.99\nEstimated taxes\n$3.50\nTotal\nUSD\n$50.47\nIncluding $3.50 in taxes",
+    rows: ["Product image\nDescription\nQuantity\nPrice", "2\nClassic Tee\nM / Black\n$39.98"],
+    zip: " 94107 ",
+  });
+  check("shopify: total from the labelled Total row", summary.merchant_total === 50.47);
+  check("shopify: currency is the code printed at the total", summary.currency === "USD");
+  check("shopify: subtotal, shipping (not the 3 of '3-5 days') and tax", summary.subtotal === 39.98 && summary.shipping === 6.99 && summary.tax === 3.5);
+  check("shopify: one line, header row skipped", summary.lines.length === 1 &&
+    JSON.stringify(summary.lines[0]) === '{"title":"Classic Tee","quantity":2,"amount":39.98}');
+  check("shopify: the ZIP is read back from the form", summary.ship_to_postal_code === "94107");
+  check("shopify: '$' with no code is an UNREAD currency, not USD",
+    shopify.parseCashier({ text: "Total\n$50.47" }).currency === null);
+  check("shopify: free shipping reads as 0", shopify.parseCashier({ text: "Shipping\nFree\nTotal\nUSD $10.00" }).shipping === 0);
+  check("shopify: a line with no readable quantity keeps null, never 1",
+    shopify.parseSummaryLine("Classic Tee\n$19.99").quantity === null);
+  check("shopify: a 'Quantity' label is read", shopify.parseSummaryLine("Quantity\n3\nClassic Tee\n$59.97").quantity === 3);
+
+  const { breakdown } = shopify.breakdown(summary);
+  check("shopify: the breakdown adds up from the summary",
+    JSON.stringify(breakdown) === '{"items":39.98,"shipping":6.99,"tax":3.5,"merchant_fees":0,"merchant_total":50.47}');
+  check("shopify: a residual is named as merchant_fees",
+    shopify.breakdown({ subtotal: 10, shipping: 5, tax: 1, merchant_total: 18.5 }).breakdown.merchant_fees === 2.5);
+  check("shopify: an unread discount refuses the breakdown",
+    shopify.breakdown({ subtotal: 10, shipping: 5, tax: 1, merchant_total: 12 }).breakdown === null);
+  check("shopify: no shipping figure refuses the breakdown",
+    shopify.breakdown({ subtotal: 10, shipping: null, tax: 1, merchant_total: 11 }).breakdown === null);
+
+  // End to end, pure: describe + summary → a quote the validator accepts,
+  // and the cashier → a buy the validator accepts.
+  const item = { ...d, quantity: 2 };
+  check("shopify: describe + breakdown make a valid priced quote", V.quote({ status: "priced", item, breakdown, currency: summary.currency,
+    service_ends_at: "2026-10-21", requires: ["recipient", "address.shipping"] }).length === 0);
+  const cashier = { merchant_total: summary.merchant_total, currency: summary.currency, lines: summary.lines, ship_to_postal_code: summary.ship_to_postal_code };
+  check("shopify: the read cashier makes a valid buy walk", V.buy({ payClicked: false, paymentStatus: "unverified", payReachable: true, cashier }).length === 0);
+
+  // The page half, against a fake page: product() NAVIGATES to the .js
+  // document (the browser's network, bounded by allowedDomains) — it never
+  // fetches — and addToCart navigates to the permalink on the page's origin.
+  const visits = [];
+  const fakePage = { goto: async u => { visits.push(u); }, evaluate: async () => JSON.stringify(TEE), url: async () => "https://store.test/products/classic-tee" };
+  const got = await shopify.product(fakePage, "https://store.test/products/classic-tee?variant=12");
+  check("shopify: product() navigates to <origin>/products/<handle>.js", visits[0] === "https://store.test/products/classic-tee.js");
+  check("shopify: product() returns the parsed document with its origin", got.variants.length === 4 && got.origin === "https://store.test");
+  await shopify.addToCart(fakePage, 12, 2);
+  check("shopify: addToCart navigates to the permalink on the page's origin", visits[1] === "https://store.test/cart/12:2");
+}
+
+// A parcel's destination is identity too. buy.v1 carries the recipient and
+// the street: both must be gone from a case file, while region, ZIP and
+// country — what a debugger needs to see which shipping rule fired — stay.
+{
+  const dir = mkdtempSync(`${tmpdir()}/case-buy-`);
+  const cwd = process.cwd();
+  process.chdir(dir);
+  for (const k of ["CARD_NUMBER", "LLM_RUN_TOKEN", "ACCOUNT_PASSWORD"]) delete process.env[k];
+  process.env.TASK = "buy";
+  process.env.RECIPE_INPUT = JSON.stringify({ schema: "buy.v1", task: "buy", data: {
+    product: "shop", item: { ref: "https://store.test/products/classic-tee?variant=12", quantity: 2 },
+    engaged: { merchant_total: 50.47, currency: "USD" },
+    fulfilment: { recipient: { given: "Augusta", surname: "Lovelace", phone: "+14155550100" },
+      "address.shipping": { line1: "2 Market Street", line2: "Apt 4B", city: "San Francisco", region: "CA", postal_code: "94107", country: "US" } },
+    contact_email: "o-77@bookings.brij.fi" } });
+  const page = { url: async () => "https://store.test/checkouts/cn/x", evaluate: async () =>
+    `<input name="firstName" value="Augusta"><input name="lastName" value="Lovelace"><input name="address1" value="2 Market Street">` +
+    `<input name="address2" value="Apt 4B"><input name="city" value="San Francisco"><select name="zone"><option value="CA" selected>California</option></select>` +
+    `<input name="postalCode" value="94107"><input name="phone" value="+14155550100"><input name="email" value="o-77@bookings.brij.fi"><b>US</b>` };
+  await dumpCase(() => page, { exit: 6 });
+  const html = gunzipSync(readFileSync("case.html.gz")).toString();
+  for (const pii of ["Augusta", "Lovelace", "+14155550100", "2 Market Street", "Apt 4B", "San Francisco", "o-77@bookings.brij.fi"]) {
+    check(`case(buy): ${pii.slice(0, 8)}… is redacted`, !html.includes(pii));
+  }
+  check("case(buy): region, ZIP and country survive", html.includes('value="CA"') && html.includes('value="94107"') && html.includes("<b>US</b>"));
+  check("case(buy): the form's structure survives", html.includes('name="address1"') && html.includes('name="postalCode"'));
+  process.chdir(cwd);
+}
+console.log(`SDK unit total (with protocol 2): ${unit - unitFailed}/${unit} passed`);
 if (unitFailed) process.exit(1);

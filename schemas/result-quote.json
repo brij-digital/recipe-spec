@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "__FULFILLER_RESULT__ — task: quote (protocol v2, shop.v1)",
+  "description": "Arithmetic the schema cannot say, enforced by the SDK validator and the Go runner alike: when priced, |items+shipping+tax+merchant_fees - merchant_total| <= 0.01, |unit_price*quantity - items| <= 0.01, and service_ends_at is a real calendar date. Echo checks (selections and quantity equal the input) are the runner's.",
+  "type": "object",
+  "required": ["v", "task", "status"],
+  "properties": {
+    "v": { "const": 2 },
+    "task": { "const": "quote" },
+    "status": { "enum": ["priced", "options_required", "unavailable"] }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "priced" } } },
+      "then": {
+        "required": ["item", "breakdown", "currency", "service_ends_at", "requires"],
+        "properties": {
+          "item": {
+            "type": "object",
+            "required": ["ref", "title", "selections", "quantity", "unit_price"],
+            "properties": {
+              "ref": { "type": "string", "minLength": 1 },
+              "title": { "type": "string", "minLength": 1 },
+              "selections": { "type": "object" },
+              "quantity": { "type": "integer", "minimum": 1 },
+              "unit_price": { "type": "number", "exclusiveMinimum": 0 },
+              "sku": { "type": "string" },
+              "image_url": { "type": "string" }
+            }
+          },
+          "breakdown": {
+            "type": "object",
+            "required": ["items", "shipping", "tax", "merchant_fees", "merchant_total"],
+            "properties": {
+              "items": { "type": "number", "minimum": 0 },
+              "shipping": { "type": "number", "minimum": 0 },
+              "tax": { "type": "number", "minimum": 0 },
+              "merchant_fees": { "type": "number", "minimum": 0 },
+              "merchant_total": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          },
+          "currency": { "type": "string", "pattern": "^[Uu][Ss][Dd]$" },
+          "shipping_method": { "type": "string" },
+          "service_ends_at": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$", "description": "When the service is over (the parcel delivered): what the escrow hold is sized from." },
+          "requires": {
+            "type": "array",
+            "items": { "enum": ["person", "document", "recipient", "address.shipping", "contact.phone", "loyalty"] }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "options_required" } } },
+      "then": {
+        "required": ["menu"],
+        "properties": {
+          "menu": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["name", "values"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "values": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+                "unavailable": { "type": "array", "items": { "type": "string" } }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "status": { "const": "unavailable" } } },
+      "then": {
+        "required": ["reason"],
+        "properties": {
+          "reason": { "enum": ["out_of_stock", "not_shippable", "quantity_limit", "not_found"] }
+        }
+      }
+    }
+  ]
+}
