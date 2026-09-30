@@ -456,13 +456,11 @@ capabilities:                    # quote + buy, required; search optional
 requires: [recipient, address.shipping]   # what a buy will need (vocabulary below)
 cashier: shopify                 # which payer adapter checks and pays this checkout
 oracle:
-  type: email
-  template: store_v1
-  confirmed_pattern: '…'         # the confirmation email says the order is placed
-  reference_pattern: '…'         # group 1 = the merchant's order number
-  cancelled_subject_pattern: '…'
-  sample: |                      # a real confirmation the patterns are checked against
-    Subject: Order #1043 confirmed …
+  type: email                    # that is all you declare: the marketplace derives the
+                                 # patterns from the first real confirmation (bootstrap).
+                                 # Optional, all three or none: confirmed_pattern,
+                                 # reference_pattern (group 1 = order number),
+                                 # cancelled_subject_pattern — plus a `sample` to test them.
 coverage: { countries: [US], max_quantity: 10 }
 conformance:
   products:                      # what the dry run and the canary quote and walk

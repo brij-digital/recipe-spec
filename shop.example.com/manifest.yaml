@@ -25,17 +25,11 @@ kind: browser
 
 oracle:
   type: email                    # settlement truth = the merchant's confirmation email,
-  template: shop_example_v1      # DKIM-verified, delivered to the order's own address
-  confirmed_pattern: '(?i)\border\s+#?\d+\s+(?:is\s+)?confirmed\b|thank\s+you\s+for\s+your\s+(?:order|purchase)'
-  reference_pattern: '(?i)order\s+#?(\d{3,10})'          # group 1 = the merchant's order number
-  cancelled_subject_pattern: '(?i)\b(cancel(?:led|ed)?|refund(?:ed)?)\b'
-  # A real confirmation (subject + body excerpt) the patterns are checked
-  # against at submission: a pattern that does not match its own sample is
-  # refused before anyone relies on it.
-  sample: |
-    Subject: Order #1043 confirmed
-    Thank you for your purchase! We're getting your order ready to be shipped.
-    Order #1043 — Classic Tee - M / Black × 2
+                                 # DKIM-verified, delivered to the order's own address.
+  # No patterns needed: the marketplace derives them from the first real
+  # confirmation (bootstrap). You MAY declare all three — confirmed_pattern,
+  # reference_pattern (group 1 = the order number), cancelled_subject_pattern —
+  # plus a `sample` confirmation the gate tests them on.
 
 coverage:
   countries: [US]                # ship-to countries this recipe quotes; nothing else is routed here
