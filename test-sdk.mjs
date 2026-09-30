@@ -24,10 +24,11 @@ console.log("ALL PASS");
 {
   const fs = await import("node:fs");
   const assert = (cond, msg) => { if (!cond) { console.log("manifest↔schema FAILED: " + msg); process.exit(1); } };
-  // Both toys: the air one (protocol 1, three tasks) and the store
-  // (protocol 2, quote + buy) — each must name schemas that exist.
+  // The toys: the air one (protocol 1, three tasks), the store (protocol 2,
+  // quote + buy) and the railway (protocol 2, discover + quote + buy) — each
+  // must name schemas that exist.
   const refs = [];
-  for (const [dir, min] of [["example.com", 3], ["shop.example.com", 2]]) {
+  for (const [dir, min] of [["example.com", 3], ["shop.example.com", 2], ["rail.example.com", 3]]) {
     const manifest = fs.readFileSync(new URL(`./${dir}/manifest.yaml`, import.meta.url), "utf8");
     const capBlock = manifest.match(/^capabilities:[^\n]*\n((?:[ \t]+[^\n]*\n?)+)/m)?.[1] || "";
     const mine = []; let task = null;
@@ -405,4 +406,98 @@ const MUG = { id: 2, title: "Mug", handle: "mug", options: [{ name: "Title", pos
   process.chdir(cwd);
 }
 console.log(`SDK unit total (with protocol 2): ${unit - unitFailed}/${unit} passed`);
+if (unitFailed) process.exit(1);
+
+// ── protocol 2, rail (CONTRACT-rail) ──────────────────────────────────────
+// The corpus pins the discover validator and the relaxed cashier. What it
+// cannot: the stamp, the input schema readInput maps to discover, that
+// discover attaches no Stagehand by default, that a buy's persons leave no
+// trace in a case file, and that the toy railway speaks all of it.
+import { connectRuntimeBrowser } from "./sdk/index.mjs";
+{
+  check("rail: discover is a protocol-2 task", TASK_PROTOCOL.discover === 2 && TASK_PROTOCOL.search === 1);
+  const emitChild = (task, payload) => spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { emitResult } from "${new URL("./sdk/index.mjs", import.meta.url).pathname}";
+    emitResult(${JSON.stringify(task)}, ${JSON.stringify(payload)});
+  `], { encoding: "utf8" });
+  const lineOf = r => { const l = r.stdout.split("\n").find(x => x.startsWith(MARKERS.result)); return l ? JSON.parse(l.slice(MARKERS.result.length)) : null; };
+  const d = lineOf(emitChild("discover", { count: 0, items: [], v: 1, task: "search" }));
+  check("rail: discover is stamped v:2, task:discover (payload values ignored)", d?.v === 2 && d?.task === "discover");
+  const badD = emitChild("discover", { count: 1, items: [{ ref: "x", title: "t", price_from: 10, currency: "EUR" }] });
+  check("rail: a malformed discover emits NO result line and exits 7", lineOf(badD) === null && badD.status === 7);
+
+  const saved = process.env.RECIPE_INPUT;
+  process.env.RECIPE_INPUT = JSON.stringify({ schema: "rail-search.v1", task: "discover", data: { product: "rail", origin: "Paris", destination: "Lyon", depart_date: "2026-12-15", adults: 1 } });
+  check("rail: readInput accepts rail-search.v1 for TASK=discover", readInput("discover").origin === "Paris");
+  let threw = false; try { readInput("search"); } catch { threw = true; }
+  check("rail: readInput refuses rail-search.v1 for TASK=search", threw);
+  process.env.RECIPE_INPUT = JSON.stringify({ schema: "air-search.v1", task: "search", data: {} });
+  threw = false; try { readInput("discover"); } catch { threw = true; }
+  check("rail: readInput refuses air-search.v1 for TASK=discover", threw);
+  process.env.RECIPE_INPUT = JSON.stringify({ schema: "quote.v1", task: "quote", data: { product: "rail", item: { ref: "r", quantity: 1 },
+    context: { adults: 2, search: { origin: "Paris", destination: "Lyon", depart_date: "2026-12-15" } } } });
+  check("rail: readInput accepts a rail quote.v1", readInput("quote").context.adults === 2);
+  process.env.RECIPE_INPUT = saved;
+
+  // discover reads a results page over CDP, like search: no extension asked.
+  const env = { u: process.env.BB_CONNECT_URL, e: process.env.BB_EXTENSION_ID };
+  process.env.BB_CONNECT_URL = "wss://connect.test/x"; delete process.env.BB_EXTENSION_ID;
+  const sess = await connectRuntimeBrowser({ task: "discover" }).catch(e => ({ error: e.message }));
+  check("rail: discover defaults to no Stagehand (like search)", sess.browser === null && sess.connectUrl === "wss://connect.test/x");
+  let refusedBuy = false; try { await connectRuntimeBrowser({ task: "buy" }); } catch { refusedBuy = true; }
+  check("rail: buy still needs the extension by default", refusedBuy);
+  if (env.u === undefined) delete process.env.BB_CONNECT_URL; else process.env.BB_CONNECT_URL = env.u;
+  if (env.e !== undefined) process.env.BB_EXTENSION_ID = env.e;
+
+  const railCashier = { merchant_total: 91, currency: "USD", lines: [{ title: "Paris → Lyon, 2 adults", quantity: 1, amount: 91 }] };
+  check("rail: a cashier with no ZIP is a valid buy walk", V.buy({ payClicked: false, paymentStatus: "unverified", payReachable: true, cashier: railCashier }).length === 0);
+  check("rail: a ZIP present but not a string is refused", V.buy({ payClicked: false, paymentStatus: "unverified", payReachable: true, cashier: { ...railCashier, ship_to_postal_code: 94107 } }).length === 1);
+}
+// A train's travellers are identity, exactly like a flight's passengers.
+{
+  const dir = mkdtempSync(`${tmpdir()}/case-rail-`);
+  const cwd = process.cwd();
+  process.chdir(dir);
+  process.env.TASK = "buy";
+  process.env.RECIPE_INPUT = JSON.stringify({ schema: "buy.v1", task: "buy", data: {
+    product: "rail", item: { ref: "rx:paris-lyon:2026-12-15T08:04", selections: { fare: "Standard" }, quantity: 1 },
+    engaged: { merchant_total: 91, currency: "USD" },
+    fulfilment: { person: [{ given: "Augusta", surname: "Lovelace", dob: "1990-12-10" }, { given: "Charles", surname: "Babbage", dob: "1991-12-26" }] },
+    contact_email: "o-88@bookings.brij.fi" } });
+  const page = { url: async () => "https://rail.test/book/passengers", evaluate: async () =>
+    `<input name="first-0" value="Augusta"><input name="last-0" value="Lovelace"><input name="dob-0" value="1990-12-10">` +
+    `<input name="first-1" value="Charles"><input name="last-1" value="Babbage"><input name="dob-1" value="1991-12-26">` +
+    `<input name="email" value="o-88@bookings.brij.fi"><p>Paris → Lyon Standard</p>` };
+  await dumpCase(() => page, { exit: 6 });
+  const html = gunzipSync(readFileSync("case.html.gz")).toString();
+  for (const pii of ["Augusta", "Lovelace", "1990-12-10", "Charles", "Babbage", "1991-12-26", "o-88@bookings.brij.fi"]) {
+    check(`case(rail): ${pii.slice(0, 8)}… is redacted`, !html.includes(pii));
+  }
+  check("case(rail): the journey and the form's structure survive", html.includes("Paris → Lyon Standard") && html.includes('name="dob-1"'));
+  process.chdir(cwd);
+}
+// The toy railway, end to end: every result it emits is one the validators accept.
+{
+  const run = (task, schema, data) => spawnSync(process.execPath, [new URL("./rail.example.com/recipe.mjs", import.meta.url).pathname], {
+    encoding: "utf8", env: { ...process.env, TASK: task, RECIPE_INPUT: JSON.stringify({ schema, task, data }) } });
+  const result = r => { const l = r.stdout.split("\n").find(x => x.startsWith(MARKERS.result)); return l ? JSON.parse(l.slice(MARKERS.result.length)) : null; };
+  const search = { origin: "Paris", destination: "Lyon", depart_date: "2026-12-15" };
+  const dr = run("discover", "rail-search.v1", { product: "rail", ...search, depart_after: "08:00", adults: 2 });
+  const disc = result(dr);
+  check("rail toy: discover exits 0 with journeys priced for the party", dr.status === 0 && disc?.count === 3 && disc.items[0].price_from === 91);
+  const none = result(run("discover", "rail-search.v1", { product: "rail", origin: "Paris", destination: "Atlantis", depart_date: "2026-12-15", adults: 1 }));
+  check("rail toy: no trains is an empty, valid answer", none?.count === 0 && none.items.length === 0);
+  const ref = disc?.items[0].ref;
+  const qr = result(run("quote", "quote.v1", { product: "rail", item: { ref, selections: { fare: "Standard" }, quantity: 1 }, context: { adults: 2, search } }));
+  check("rail toy: quote is priced for the party and requires person", qr?.status === "priced" && qr.breakdown.merchant_total === 91 && qr.requires.includes("person"));
+  const menu = result(run("quote", "quote.v1", { product: "rail", item: { ref, quantity: 1 }, context: { adults: 2, search } }));
+  check("rail toy: no fare chosen is options_required", menu?.status === "options_required" && menu.menu[0].name === "fare");
+  const br = run("buy", "buy.v1", { product: "rail", item: { ref, selections: { fare: "Standard" }, quantity: 1 },
+    engaged: { merchant_total: 91, currency: "USD" }, contact_email: "o-1@bookings.brij.fi",
+    fulfilment: { person: [{ given: "Ada", surname: "Lovelace", dob: "1990-12-10" }, { given: "Charles", surname: "Babbage", dob: "1991-12-26" }] } });
+  const buy = result(br);
+  check("rail toy: buy walks to a cashier with no ZIP, and never clicks Pay",
+    br.status === 0 && buy?.payReachable === true && buy.payClicked === false && buy.cashier.merchant_total === 91 && !("ship_to_postal_code" in buy.cashier));
+}
+console.log(`SDK unit total (with rail): ${unit - unitFailed}/${unit} passed`);
 if (unitFailed) process.exit(1);

@@ -1,5 +1,5 @@
 {
- "comment": "Shared conformance corpus: every case lists the task, the payload handed to emitResult, and whether an implementation must accept it. Tasks search / offer-details / book are protocol 1 (signal v:1); quote / buy are protocol 2, shop.v1 (signal v:2) \u2014 CONTRACT-v2 rules marked [corpus] each have a valid and an invalid case here. The SDK validators and the JSON Schemas must agree on every case; the marketplace runner replays the same corpus in Go.",
+ "comment": "Shared conformance corpus: every case lists the task, the payload handed to emitResult, and whether an implementation must accept it. Tasks search / offer-details / book are protocol 1 (signal v:1); discover / quote / buy are protocol 2 (signal v:2: shop.v1, and rail's discover per CONTRACT-rail) \u2014 CONTRACT-v2 rules marked [corpus] each have a valid and an invalid case here. The SDK validators and the JSON Schemas must agree on every case; the marketplace runner replays the same corpus in Go.",
  "cases": [
   {
    "name": "search minimal one-way",
@@ -1794,7 +1794,7 @@
   {
    "name": "buy cashier without the ship-to postal code",
    "task": "buy",
-   "valid": false,
+   "valid": true,
    "payload": {
     "payClicked": false,
     "paymentStatus": "unverified",
@@ -1831,6 +1831,592 @@
       }
      ],
      "ship_to_postal_code": ""
+    }
+   }
+  },
+  {
+   "name": "discover rail journeys",
+   "task": "discover",
+   "valid": true,
+   "payload": {
+    "count": 2,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     },
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T09:00:TGV6605",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 09:00\u201311:04",
+      "price_from": 39.0,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover no trains is honest",
+   "task": "discover",
+   "valid": true,
+   "payload": {
+    "count": 0,
+    "items": []
+   }
+  },
+  {
+   "name": "discover item without a summary",
+   "task": "discover",
+   "valid": true,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD"
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover currency lower-case usd",
+   "task": "discover",
+   "valid": true,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "usd",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover items missing",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 0
+   }
+  },
+  {
+   "name": "discover items not an array",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": {
+     "0": {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    }
+   }
+  },
+  {
+   "name": "discover count mismatch",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     },
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T09:00:TGV6605",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 09:00\u201311:04",
+      "price_from": 39.0,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover count missing",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover item not an object",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     "tl:FRPLY-FRLPD"
+    ]
+   }
+  },
+  {
+   "name": "discover item without a ref",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover item ref empty",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover item ref not a string",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": 6601,
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover item without a title",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover item title empty",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover price_from zero",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 0,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover price_from negative",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": -45.5,
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover price_from stringly",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": "45.50",
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover price_from missing",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "currency": "USD",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover item without a currency",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover item in another currency",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "EUR",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover summary not an object",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": "08:04-10:02, direct"
+     }
+    ]
+   }
+  },
+  {
+   "name": "discover summary is an array",
+   "task": "discover",
+   "valid": false,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "USD",
+      "summary": [
+       "08:04",
+       "10:02"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "buy rail cashier: no ship-to postal code (a ticket ships nowhere)",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 45.5,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu, 1 adult, Standard",
+       "quantity": 1,
+       "amount": 45.5
+      }
+     ]
+    }
+   }
+  },
+  {
+   "name": "buy cashier ship-to postal code not a string",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 45.5,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu, 1 adult, Standard",
+       "quantity": 1,
+       "amount": 45.5
+      }
+     ],
+     "ship_to_postal_code": 94107
+    }
+   }
+  },
+  {
+   "name": "buy cashier ship-to postal code null",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 45.5,
+     "currency": "USD",
+     "lines": [
+      {
+       "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu, 1 adult, Standard",
+       "quantity": 1,
+       "amount": 45.5
+      }
+     ],
+     "ship_to_postal_code": null
+    }
+   }
+  },
+  {
+   "name": "buy rail cashier with no lines",
+   "task": "buy",
+   "valid": false,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 45.5,
+     "currency": "USD",
+     "lines": []
     }
    }
   }

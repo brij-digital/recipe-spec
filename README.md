@@ -553,6 +553,26 @@ there: `import { shopify } from "../sdk/index.mjs"`.
 | `priceTo(page, shipTo)` · `fillShipping(page, fulfilment, email)` · `readCashier(page)` | the one-page checkout — **unverified against a live store yet**: treat as a starting point |
 | `parseCashier`, `breakdown`, `fieldPlan`, … | the pure halves of the above, tested in `test-sdk.mjs` |
 
+### Protocol v2 — rail (`product: rail`)
+
+A train has to be FOUND before it is quoted, so a rail recipe adds a third
+task, **`discover`** (protocol 2 names its discovery task `discover`; `search`
+stays the v1 flight task). Everything after it is the shared `quote` / `buy`.
+
+| Task | Input (`RECIPE_INPUT.data`) | Result (`v: 2`) |
+|---|---|---|
+| `discover` | `rail-search.v1`: `product`, `origin`, `destination` (station or city names, as a traveller types them), `depart_date`, `depart_after?` (HH:MM), `adults` | `{count, items: [{ref, title, price_from, currency: "USD", summary?}]}` — `ref` is YOUR id, one you can find again; empty `items` is valid (no trains) |
+| `quote` | `item.ref` = a discover ref, `item.quantity` = 1, `item.selections` = `{fare?}`, `context.adults`, `context.search` (the query that found it) | as shop: `priced` (checkout total for the whole party) / `options_required` (the fares on sale) / `unavailable`; `requires` must include `person` |
+| `buy` | `fulfilment.person[]` = `{given, surname, dob}` × adults, lead first; no address | walk to the checkout, stop before Pay, report `cashier` (`merchant_total`, `currency`, `lines`; no ZIP for a train) |
+
+Manifest: `product: rail`, `capabilities: {discover: {input_schema: rail-search.v1}, quote, buy}`,
+`requires: [person]`, `cashier: trainline` (the payer adapter for
+thetrainline.com), `flow: guest`, `oracle: {type: email}` (patterns optional),
+`coverage.max_adults`, `payment.currency: USD`, and `conformance.routes`:
+3–5 `{origin, destination}` pairs with DAILY service — the gate draws one per
+dry run (a few weeks out) and fails a walk that finds no train. Start from
+`rail.example.com/`.
+
 ### What a protocol-2 recipe must never do
 
 - click Pay, or wait for an approval — your walk is handed no card and no

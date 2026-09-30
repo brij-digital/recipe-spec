@@ -1,6 +1,6 @@
 // @brij/recipe-sdk v1 — the recipe CONTRACT as code.
 // Speaks protocol 1 (air: search / offer-details / book) and protocol 2
-// (shop.v1: quote / buy — README §"Protocol v2"). One SDK for both: the
+// (shop.v1: quote / buy — README §"Protocol v2"; rail adds discover). One SDK for both: the
 // signals, gates and evidence are the same machinery, only the tasks differ.
 //
 // Everything a recipe says to the runtime goes through here: the machine
@@ -71,7 +71,9 @@ export const PROTOCOL_VERSION = 1;
 // manifest — and because a v1 recipe must keep emitting exactly what it
 // emitted yesterday, byte for byte, without re-declaring anything.
 export const PROTOCOL_VERSION_V2 = 2;
-export const TASK_PROTOCOL = Object.freeze({ search: 1, "offer-details": 1, book: 1, quote: 2, buy: 2 });
+// `discover` is protocol 2's discovery task, per vertical (rail first): it is
+// never called `search`, because `search` is the air task and stays v:1.
+export const TASK_PROTOCOL = Object.freeze({ search: 1, "offer-details": 1, book: 1, discover: 2, quote: 2, buy: 2 });
 
 // ── narration + timing ──
 export const L = s => console.log(s);
@@ -124,8 +126,14 @@ const isISODate = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) &&
 
 // The cashier a buy walk reports when it reached Pay. It is what the PAYER
 // compares against the order before the human is paged (currency, total ≤
-// engaged, one line, the quantity, the ZIP), so every field is one of those
-// comparisons: a cashier the payer cannot compare is a cashier it cannot pass.
+// engaged, the lines, and for a parcel the ZIP), so every field is one of
+// those comparisons: a cashier the payer cannot compare is one it cannot pass.
+//
+// ship_to_postal_code is OPTIONAL here since rail: a train ticket ships
+// nowhere, so a rail cashier has no ZIP to read. The product that needs it
+// (shop) is enforced by the FULFILLER, which knows the product — the result
+// alone does not. Present, it must still be a non-empty string: an empty ZIP
+// is an unread one, and a value the payer would compare against the order.
 const cashierErrors = c => {
   const errs = [];
   if (!isObj(c)) return ["cashier must be an object"];
@@ -139,7 +147,7 @@ const cashierErrors = c => {
     if (!Number.isInteger(l.quantity) || l.quantity < 1) errs.push(`cashier.lines[${i}].quantity must be an integer >= 1`);
     if (!isNum(l.amount) || l.amount < 0) errs.push(`cashier.lines[${i}].amount must be a number >= 0`);
   });
-  if (!isStr(c.ship_to_postal_code)) errs.push("cashier.ship_to_postal_code must be a non-empty string (read from the checkout, never echoed from the input)");
+  if (c.ship_to_postal_code !== undefined && !isStr(c.ship_to_postal_code)) errs.push("cashier.ship_to_postal_code must be a non-empty string when present (read from the checkout, never echoed from the input)");
   return errs;
 };
 
@@ -184,6 +192,27 @@ export const validators = {
   },
 
   // ── protocol 2 ──
+  // discover: what a vertical has to sell for the question asked (rail: the
+  // journeys between two places on a date). Each item is something a quote
+  // can price next — its `ref` is the recipe's own, opaque to everyone else,
+  // and must find the same journey again. price_from is the CHEAPEST fare for
+  // the whole party asked, a teaser: the quote, not this, sizes the escrow.
+  // No trains is an honest answer (count 0), never an error.
+  discover(p) {
+    const errs = [];
+    if (!Array.isArray(p.items)) return ["items must be an array ([] when nothing matches)"];
+    if (!Number.isInteger(p.count) || p.count !== p.items.length) errs.push("count must equal items.length");
+    p.items.forEach((it, i) => {
+      if (!isObj(it)) { errs.push(`items[${i}] must be an object`); return; }
+      if (!isStr(it.ref)) errs.push(`items[${i}].ref must be a non-empty string (the recipe's own id for this item)`);
+      if (!isStr(it.title)) errs.push(`items[${i}].title must be a non-empty string`);
+      if (!isNum(it.price_from) || it.price_from <= 0) errs.push(`items[${i}].price_from must be a number > 0`);
+      const cur = currencyError(`items[${i}]`, it.currency);
+      if (cur) errs.push(cur);
+      if (it.summary !== undefined && !isObj(it.summary)) errs.push(`items[${i}].summary must be an object when present`);
+    });
+    return errs;
+  },
   // quote: a FIRM price for one item, shipped to one place — or the reason
   // there is none. Three outcomes, and each is an answer the marketplace can
   // act on: charge this, ask the buyer this, or tell them no. A quote is
@@ -272,7 +301,7 @@ export const validators = {
 // ── signal emission — the ONLY way a recipe should talk to the runner ──
 // emitResult(task, payload) VALIDATES, stamps {v, task} (the SDK imposes
 // both — payload values are ignored; v is the TASK's protocol, 1 for the air
-// tasks and 2 for quote/buy), and refuses a malformed result with
+// tasks and 2 for discover/quote/buy), and refuses a malformed result with
 // EXIT.malformed. Financial conservatism: a malformed BOOK or BUY result
 // still emits a minimal well-formed line carrying payClicked first, so the
 // runner never loses the one fact that decides refund vs uncertain.
@@ -382,6 +411,8 @@ export const recordPayload = (url, body) => {
 // postal_code and country are KEPT: they are not an identity on their own,
 // they are exactly what a debugger needs to see which shipping rule fired,
 // and "CA"/"US" are the two-letter values the ≥4 rule exists to spare.
+// buy.v1 for rail carries fulfilment.person[] — {given, surname, dob} per
+// traveller, exactly a v1 passenger — so the same named fields cover it.
 const PII_FIELDS = ["given", "surname", "dob", "idnum", "idexp", "contact_email", "contact_phone", "email", "phone",
   "line1", "line2", "city"];
 const SECRET_ENV = ["CARD_NUMBER", "CARD_CVV", "CARD_EXPIRATION", "LLM_RUN_TOKEN", "BB_CONNECT_URL", "ACCOUNT_PASSWORD"];
@@ -822,7 +853,7 @@ export const readInput = task => {
   let doc;
   try { doc = JSON.parse(raw); } catch (e) { throw new Error("RECIPE_INPUT is not JSON: " + e.message); }
   const want = { search: "air-search.v1", "offer-details": "air-offer-details.v1", book: "air-book.v1",
-    quote: "quote.v1", buy: "buy.v1" }[task];
+    discover: "rail-search.v1", quote: "quote.v1", buy: "buy.v1" }[task];
   if (!want) throw new Error(`unknown TASK ${task}`);
   if (doc.schema !== want) throw new Error(`RECIPE_INPUT declares ${doc.schema}, TASK=${task} speaks ${want}`);
   return doc.data || {};
@@ -936,7 +967,8 @@ export const connectLocalBrowser = async ({ needsBrowser = false } = {}) => {
 // the validators stay dependency-free.
 // buy defaults like book: it is the purchase walk, and the checkout forms it
 // fills are where act() earns its keep. A cardless walk passes
-// needsBrowser:false explicitly, exactly as a cardless book does.
+// needsBrowser:false explicitly, exactly as a cardless book does. discover
+// defaults like search (no Stagehand): it reads a results page, over CDP.
 export const connectRuntimeBrowser = async ({ task, needsBrowser = task === "book" || task === "buy" } = {}) => {
   const connectUrl = (process.env.BB_CONNECT_URL || "").trim();
   const sessionId = (process.env.BB_SESSION_ID || "").trim();

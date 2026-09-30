@@ -9,7 +9,14 @@
 #
 # GLOBAL across verticals: `quote` is the task, `product` says which kind of
 # thing is quoted, and `context` carries what that kind needs to be priced.
-# Today the only product is `shop` (a physical item shipped to an address).
+# Products: `shop` (a physical item shipped to an address) and `rail` (a
+# train journey found by `discover` on rail-search.v1).
+#
+#   RECIPE_INPUT='{"schema":"quote.v1","task":"quote","data":{
+#     "product":"rail",
+#     "item":{"ref":"<a discover item ref>","selections":{"fare":"Standard"},"quantity":1},
+#     "context":{"adults":2,"search":{"origin":"Paris","destination":"Lyon",
+#                                     "depart_date":"2026-12-15","depart_after":"08:00"}}}}'
 #
 # The price you answer is what the customer's escrow is sized from, so it
 # must be the CHECKOUT's price for this destination — item, shipping, tax and
@@ -17,23 +24,35 @@
 schema: quote.v1
 task: quote
 required:
-  - product           # "shop"
+  - product           # "shop" | "rail"
   - item.ref          # what to price: a product URL on this recipe's domain
                       # (a ?variant=<id> on it names the variant outright),
                       # or an id this recipe's own discovery produced
-  - item.quantity     # integer 1..10 for shop — the count the checkout must hold
+  - item.quantity     # integer 1..10 for shop — the count the checkout must hold;
+                      # always 1 for rail (the party is context.adults)
   # shop only — a shipping quote needs a destination, and these three are
   # what every merchant rates on. No street: a quote is asked before the
   # buyer has given one, and it is NOT invented to get a rate.
   - context.ship_to.country      # ISO 3166-1 alpha-2, upper-case ("US")
   - context.ship_to.region       # ISO 3166-2 subdivision code without the country ("CA")
   - context.ship_to.postal_code  # as the buyer wrote it ("94107")
+  # rail only — the party, and the question discover answered, so the
+  # recipe can find the journey again (a ref alone may not survive a new
+  # session on the supplier's site).
+  - context.adults                # integer >= 1 — the whole party is priced
+  - context.search.origin         # as in rail-search.v1
+  - context.search.destination
+  - context.search.depart_date    # YYYY-MM-DD
 optional:
   - item.selections   # {option name: value}, e.g. {"Size":"M","Color":"Black"}.
                       # {} or absent = none given. Match names and values
                       # case-insensitively; if they do not name exactly ONE
                       # variant, answer status "options_required" with the
                       # menu — never pick one for the buyer.
+                      # rail: the fare, e.g. {"fare":"Standard"}.
+  - context.search.depart_after  # rail, HH:MM, as in rail-search.v1
+# rail: a priced quote's `requires` must include "person" — the buy is
+# handed one person per adult.
 runtime_provides:
   - browser_session
   - llm

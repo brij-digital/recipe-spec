@@ -1,0 +1,57 @@
+# rail.example.com — the toy RAIL supplier. Protocol 2, product rail:
+# discover (rail-search.v1) → quote → buy of one train journey for a party.
+# Every field below is read by the runtime (README §"Protocol v2 — rail").
+protocol_version: 2
+domain: rail.example.com
+recipe: recipe.mjs
+product: rail
+
+capabilities:                    # rail declares all three
+  discover:
+    input_schema: rail-search.v1 # the journeys between two places on a date
+  quote:
+    input_schema: quote.v1       # a firm price for one journey, one fare, the whole party
+  buy:
+    input_schema: buy.v1         # the walk to the cashier; the payer pays
+
+# The slots a buy will need: one `person` per adult (given, surname, dob),
+# lead first. No address — a ticket ships nowhere.
+requires: [person]
+
+cashier: trainline               # which payer adapter checks and pays this checkout
+                                 # (the payer, not your recipe, holds the card).
+                                 # trainline = thetrainline.com's cashier.
+flow: guest
+kind: browser
+
+oracle:
+  type: email                    # settlement truth = the supplier's e-ticket email,
+                                 # DKIM-verified, delivered to the order's own address.
+  # No patterns needed: bootstrap derives them from the first real
+  # confirmation. You MAY declare all three — confirmed_pattern,
+  # reference_pattern (group 1 = the booking reference),
+  # cancelled_subject_pattern — plus a `sample` to test them on.
+
+coverage:
+  max_adults: 4                  # 1..9; the marketplace never sends a larger party
+
+# What the conformance walk (and the daily canary) discovers, quotes and
+# walks to the cashier. 3 to 5 routes the supplier sells every day; the
+# gate draws one per run, with a date a few weeks out.
+conformance:
+  routes:
+    - { origin: Paris, destination: Lyon }
+    - { origin: London, destination: Manchester }
+    - { origin: Madrid, destination: Barcelona }
+
+payment:
+  currency: USD                  # the marketplace settles USD and converts nothing
+  max_amount: 500                # above this, orders are not routed here
+
+known_traps:
+  - "the toy railway has no traps; a real one has many (seat reservation upsells, railcard prompts) — write them down here"
+
+author:
+  partner: example
+  wallet: 9a6pGJsb9gUoYJVWvrBDGxm2Yvqti9AKs6tEL9maZBG7
+  primary: true

@@ -24,9 +24,9 @@
 schema: buy.v1
 task: buy
 required:
-  - product                   # "shop"
+  - product                   # "shop" | "rail"
   - item.ref                  # the ref your quote answered with
-  - item.quantity             # integer 1..10 for shop
+  - item.quantity             # integer 1..10 for shop; 1 for rail
   - engaged.merchant_total    # what the customer engaged: your quote's
                               # merchant_total. Informational for the walk —
                               # the payer, not the recipe, refuses a cashier
@@ -43,6 +43,13 @@ required:
   - fulfilment["address.shipping"].region       # ISO 3166-2 code without the country ("CA")
   - fulfilment["address.shipping"].postal_code
   - fulfilment["address.shipping"].country      # ISO 3166-1 alpha-2 ("US")
+  # rail only — one traveller per adult quoted (context.adults), lead first.
+  # No address: a ticket ships nowhere.
+  #   "fulfilment":{"person":[{"given":"Ada","surname":"Lovelace","dob":"1990-12-10"}]}
+  - fulfilment.person           # array, length >= 1
+  - fulfilment.person[].given
+  - fulfilment.person[].surname
+  - fulfilment.person[].dob     # YYYY-MM-DD
 optional:
   - item.selections                     # as quoted
   - fulfilment.recipient.phone          # E.164 — fill it if the checkout asks

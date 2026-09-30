@@ -1,0 +1,36 @@
+# rail-search.v1 — the PUBLIC input contract of a rail recipe's `discover`
+# task. Protocol 2 (signal v:2). A manifest references it by name
+# (capabilities.discover.input_schema).
+#
+# `discover` is protocol 2's discovery task, one input schema per vertical;
+# it is never called `search`, which stays the v1 air task (v:1).
+#
+# TRANSPORT: one JSON document in RECIPE_INPUT, {schema, task, data}, and
+# nothing else — no per-field environment fallback.
+#
+#   RECIPE_INPUT='{"schema":"rail-search.v1","task":"discover","data":{
+#     "product":"rail","origin":"Paris","destination":"Lyon",
+#     "depart_date":"2026-12-15","depart_after":"08:00","adults":1}}'
+#
+# Places are FREE TEXT, as a traveller types them ("Paris", "Lyon
+# Part-Dieu", "London"): resolving them to your supplier's stations is
+# yours, at your own door. Answer with the journeys you found (see
+# schemas/result-discover.json); each item's `ref` must let your quote find
+# the same journey again.
+schema: rail-search.v1
+task: discover
+required:
+  - product           # "rail"
+  - origin            # free text station or city name
+  - destination       # free text station or city name
+  - depart_date       # YYYY-MM-DD
+  - adults            # 1..9 — the party price_from is priced for. No default:
+                      # a price for one traveller shown to a party of three
+                      # is a price nobody was quoted. Bounded by your
+                      # manifest's coverage.max_adults.
+optional:
+  - depart_after      # HH:MM, local time at the origin — journeys leaving
+                      # at or after it. Absent = the whole day.
+runtime_provides:     # injected by the runtime, never caller- or author-declared
+  - browser_session   # keyless connect URL
+  - llm               # budgeted proxy token

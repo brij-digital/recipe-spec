@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "__FULFILLER_RESULT__ — task: discover (protocol v2, rail)",
+  "description": "What a vertical has to sell for the question asked — for rail, the journeys between two places on a date (input rail-search.v1). Each item is something a quote can price next: `ref` is the recipe's own opaque id and must find the same journey again. price_from is the cheapest fare for the whole party asked, a teaser — the quote sizes the escrow. An empty items array is an honest answer. count must equal items.length (enforced by the SDK validator and the Go runner; a JSON Schema cannot say it).",
+  "type": "object",
+  "required": ["v", "task", "count", "items"],
+  "properties": {
+    "v": { "const": 2 },
+    "task": { "const": "discover" },
+    "count": { "type": "integer", "minimum": 0 },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["ref", "title", "price_from", "currency"],
+        "properties": {
+          "ref": { "type": "string", "minLength": 1 },
+          "title": { "type": "string", "minLength": 1 },
+          "price_from": { "type": "number", "exclusiveMinimum": 0 },
+          "currency": { "type": "string", "pattern": "^[Uu][Ss][Dd]$" },
+          "summary": {
+            "type": "object",
+            "description": "Descriptive, for the buyer's agent. Rail: departs_at, arrives_at (local ISO, no zone), origin, destination (station names as the supplier shows them), changes, duration_min, operator.",
+            "properties": {
+              "departs_at": { "type": "string" },
+              "arrives_at": { "type": "string" },
+              "origin": { "type": "string" },
+              "destination": { "type": "string" },
+              "changes": { "type": "integer", "minimum": 0 },
+              "duration_min": { "type": "integer", "minimum": 0 },
+              "operator": { "type": "string" }
+            }
+          }
+        }
+      }
+    }
+  }
+}
