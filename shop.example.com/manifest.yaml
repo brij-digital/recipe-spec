@@ -43,11 +43,15 @@ coverage:
 
 # What the conformance walk (and the daily canary) quotes and walks to the
 # cashier. Real product URLs on this domain, with the options they need.
+# 3 to 5 entries, stable, in stock, cheap: the gate draws one per run.
 conformance:
   products:
     - ref: https://shop.example.com/products/classic-tee
       selections: { Size: M, Color: Black }
       quantity: 2
+    - ref: https://shop.example.com/products/canvas-tote
+    - ref: https://shop.example.com/products/wool-socks
+      quantity: 1
 
 payment:
   currency: USD                  # the marketplace settles USD and converts nothing
