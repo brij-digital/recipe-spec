@@ -587,6 +587,16 @@ read from the network, `antibotIn(body)` names the vendor or returns `""`.
 Exit 2 is scored as the supplier's flakiness and retried once by the gate;
 exit 3 ("not found") on a walled page is a lie about the inventory.
 
+### Look like a person's machine (`humanize`)
+
+`await humanize(page)` once per page, before the first navigation: a
+1920×1080 screen with a smaller window inside it, 8 cores, and the language
+of the exit's country (`BB_PROXY_COUNTRY`). The runtime's browser otherwise
+reports a window as large as its screen and 2 cores — no automation leak,
+but a profile no real visitor has. It does not defeat every anti-bot
+(Trainline's DataDome blocked it from FR and US exits alike, 2026-10-01);
+it removes the inconsistencies that are ours.
+
 ### What a protocol-2 recipe must never do
 
 - click Pay, or wait for an approval — your walk is handed no card and no

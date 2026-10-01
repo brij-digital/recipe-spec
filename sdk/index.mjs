@@ -1278,6 +1278,66 @@ export const antibot = {
   },
 };
 
+// ── humanize — make the runtime's browser look like a person's machine ──
+// The fingerprint audit of 2026-10-01 (browserscan, sannysoft, 3 sessions):
+// no automation leak (webdriver, CDP, headless all "Normal"), but a profile
+// no real visitor has — the window as large as the SCREEN (inner == screen,
+// outer > screen), 2 CPU cores, and en-US on a French exit. Browserbase's
+// fingerprint settings are ignored on our plan, so the fix is per page,
+// over the DevTools protocol, from the process that drives the page (an
+// override dies with the CDP session that set it — the runtime cannot set
+// it for you). Linux and its GPU stay: faking Windows on a Mesa GPU is a
+// louder lie than Linux.
+//
+// Call it once per page BEFORE the first navigation; it also covers pages
+// the site opens later. `country` is BB_PROXY_COUNTRY (the exit's): the
+// language follows it.
+const LANG_BY_COUNTRY = { FR: "fr-FR", GB: "en-GB", ES: "es-ES", IT: "it-IT", DE: "de-DE", NL: "nl-NL", BE: "fr-BE", PT: "pt-PT", CH: "de-CH", AT: "de-AT", IE: "en-IE", US: "en-US", CA: "en-CA" };
+export const humanize = async (page, { country = process.env.BB_PROXY_COUNTRY || "US", log = () => {} } = {}) => {
+  const lang = LANG_BY_COUNTRY[String(country).toUpperCase()] || "en-US";
+  const base = lang.split("-")[0];
+  // A plain list: Chrome derives navigator.languages from it verbatim and
+  // adds the q-weights to the header itself — weights here leak into
+  // navigator.languages as "fr;q=0.9" (measured), which no browser shows.
+  const acceptLanguage = base === "en" ? `${lang},en` : `${lang},${base},en-US,en`;
+  const apply = async p => {
+    try {
+      const cdp = await p.context().newCDPSession(p);
+      const ua = await p.evaluate(() => navigator.userAgent).catch(() => "");
+      // A 1920x1080 monitor and a maximised window inside it, minus the
+      // browser's own chrome: the page area is smaller than the screen, as
+      // on every real desktop.
+      await cdp.send("Emulation.setDeviceMetricsOverride", {
+        width: 1536, height: 864, deviceScaleFactor: 1, mobile: false,
+        screenWidth: 1920, screenHeight: 1080, positionX: 0, positionY: 0,
+      });
+      await cdp.send("Emulation.setHardwareConcurrencyOverride", { hardwareConcurrency: 8 }).catch(() => {});
+      await cdp.send("Emulation.setLocaleOverride", { locale: lang }).catch(() => {});
+      if (ua) await cdp.send("Emulation.setUserAgentOverride", { userAgent: ua, acceptLanguage });
+      p.__brijHumanized = cdp; // keep the session alive: its overrides live with it
+      log(`humanize: screen 1920x1080, 8 cores, ${lang}`);
+    } catch (e) { log("humanize: " + e.message); }
+  };
+  // The OUTER window too: the page-level metrics move the screen and the
+  // page area, but outerWidth/Height are the real window's, and a window
+  // larger than its screen is the one inconsistency left (outer 2568 on a
+  // 1920 screen). Browser-level CDP sizes the real window.
+  try {
+    const browser = page.context().browser();
+    if (browser && browser.newBrowserCDPSession) {
+      const bcdp = await browser.newBrowserCDPSession();
+      const t = await page.context().newCDPSession(page);
+      const { targetInfo } = await t.send("Target.getTargetInfo");
+      const { windowId } = await bcdp.send("Browser.getWindowForTarget", { targetId: targetInfo.targetId });
+      await bcdp.send("Browser.setWindowBounds", { windowId, bounds: { left: 0, top: 0, width: 1536, height: 1000, windowState: "normal" } });
+      page.__brijWindow = bcdp;
+      log("humanize: window 1536x1000");
+    }
+  } catch (e) { log("humanize window: " + e.message); }
+  await apply(page);
+  page.context().on("page", p => { apply(p); });
+};
+
 export const shopify = {
   handle: shopifyHandle,
   variantParam: shopifyVariantParam,

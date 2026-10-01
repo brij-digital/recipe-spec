@@ -507,6 +507,8 @@ import { connectRuntimeBrowser } from "./sdk/index.mjs";
   check("antibot: an ordinary results payload is not a wall", antibotIn('{"journeys":[{"id":"j1","price":{"amount":45}}]}') === "");
   check("antibot: a healthy page that merely LOADS DataDome is not a wall", antibotIn('<script src="https://js.datadome.co/tags.js"></script><div id="datadome-sdk">') === "");
   check("antibot: Akamai's _abck cookie script on a normal page is not a wall", antibotIn('document.cookie.includes("_abck")') === "");
+  const { humanize } = await import("./sdk/index.mjs");
+  check("humanize is exported for recipes", typeof humanize === "function");
 }
 console.log(`SDK unit total (with rail): ${unit - unitFailed}/${unit} passed`);
 if (unitFailed) process.exit(1);
