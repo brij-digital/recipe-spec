@@ -503,8 +503,10 @@ import { connectRuntimeBrowser } from "./sdk/index.mjs";
 {
   const { antibotIn } = await import("./sdk/index.mjs");
   check("antibot: Trainline's DataDome interstitial is named", antibotIn('{"url":"https://geo.captcha-delivery.com/interstitial/?initialCid=x"}') === "datadome");
-  check("antibot: PerimeterX and Cloudflare are named", antibotIn('<div id="px-captcha">') === "perimeterx" && antibotIn("https://challenges.cloudflare.com/cdn-cgi/x") === "cloudflare");
+  check("antibot: PerimeterX and Cloudflare are named", antibotIn('<div id="px-captcha">') === "perimeterx" && antibotIn("/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1?__cf_chl_rt_tk=abc") === "cloudflare");
   check("antibot: an ordinary results payload is not a wall", antibotIn('{"journeys":[{"id":"j1","price":{"amount":45}}]}') === "");
+  check("antibot: a healthy page that merely LOADS DataDome is not a wall", antibotIn('<script src="https://js.datadome.co/tags.js"></script><div id="datadome-sdk">') === "");
+  check("antibot: Akamai's _abck cookie script on a normal page is not a wall", antibotIn('document.cookie.includes("_abck")') === "");
 }
 console.log(`SDK unit total (with rail): ${unit - unitFailed}/${unit} passed`);
 if (unitFailed) process.exit(1);

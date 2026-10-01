@@ -576,9 +576,13 @@ dry run (a few weeks out) and fails a walk that finds no train. Start from
 ### Anti-bot walls (`antibot`)
 
 A supplier refusing the BROWSER is not an empty inventory. Before a search,
-`const r = await antibot.clear(page)` waits for the session's captcha solver
-when a wall shows (DataDome, PerimeterX, Cloudflare, Akamai), reloads, and
-returns `{ok, vendor}`; `ok:false` → `bail(EXIT.captcha, …)`. For responses you
+`const r = await antibot.clear(page, { deadline })` waits for the session's
+captcha solver when a wall shows (DataDome, PerimeterX, Cloudflare, Akamai),
+reloads, and returns `{ok, vendor}` — at most 25 s, and never past
+`deadline` (absolute ms: your task budget minus a margin — discover/quote
+180 s, buy 8 min — so YOU exit 2 before the runtime kills you with 124).
+Detection uses the wall's own markers only (captcha-delivery.com, #px-captcha,
+cf-chl tokens, sec-cpt): a page that merely loads DataDome's script is fine; `ok:false` → `bail(EXIT.captcha, …)`. For responses you
 read from the network, `antibotIn(body)` names the vendor or returns `""`.
 Exit 2 is scored as the supplier's flakiness and retried once by the gate;
 exit 3 ("not found") on a walled page is a lie about the inventory.

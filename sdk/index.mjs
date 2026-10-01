@@ -1218,12 +1218,17 @@ const parseSummaryLine = text => {
 // antibot.clear() waits for that solve when a wall is showing, reloads once
 // it is gone, and tells you whether the page is usable — so a recipe writes
 // one line before its search, and one check after it.
+// STRONG markers only — what the WALL itself carries, never what a normal
+// page loads. Trainline loads DataDome's script (js.datadome.co) on every
+// page, and a marker on "datadome" read every healthy page as walled
+// (reported by the Trainline author, 2026-10-01). The interstitial lives on
+// captcha-delivery.com; Cloudflare's challenge carries cf-chl tokens;
+// PerimeterX renders #px-captcha; Akamai's interstitial is sec-cpt/bm-verify.
 const ANTIBOT_MARKERS = [
-  [/captcha-delivery\.com|datadome/i, "datadome"],
-  [/px-captcha|perimeterx|human\.security|_pxhd/i, "perimeterx"],
-  [/challenges\.cloudflare\.com|cf-chl-|cf_chl_|turnstile/i, "cloudflare"],
-  [/\b_abck\b|akamai[^"]{0,40}bot|sec-cpt/i, "akamai"],
-  [/hcaptcha\.com|recaptcha\/(?:api|enterprise)/i, "captcha"],
+  [/captcha-delivery\.com/i, "datadome"],
+  [/px-captcha/i, "perimeterx"],
+  [/cf-chl-|cf_chl_|__cf_chl_/i, "cloudflare"],
+  [/sec-cpt|bm-verify/i, "akamai"],
 ];
 // antibotIn names the anti-bot vendor a text (a response body, a URL, a
 // page's HTML) shows, or "" — pure, so a recipe's own network capture can
@@ -1246,7 +1251,13 @@ export const antibot = {
   // clear(page): when a wall shows, wait (≤ timeoutMs) for the solver to
   // finish, reload, and report { ok, vendor, solved }. ok:false = still
   // walled: bail(EXIT.captcha, …), never a "not found" exit.
-  async clear(page, { timeoutMs = 45000, log = L } = {}) {
+  // Bounded so the RECIPE decides, never the runner's kill: by default it
+  // spends at most 25 s, and `deadline` (an absolute Date.now() ms) caps it
+  // further — pass the task's own budget minus your margin, and you exit 2
+  // before the runtime's timeout (exit 124) speaks for you. Task budgets:
+  // discover 180 s, quote 180 s, buy 8 min.
+  async clear(page, { timeoutMs = 25000, deadline = 0, log = L } = {}) {
+    if (deadline) timeoutMs = Math.max(0, Math.min(timeoutMs, deadline - Date.now()));
     const vendor = await antibot.detect(page);
     if (!vendor) return { ok: true, vendor: "", solved: false };
     log(`antibot: ${vendor} wall — waiting for the session's captcha solver`);
@@ -1256,7 +1267,11 @@ export const antibot = {
     try {
       await until(async () => finished || !(await antibot.detect(page)), timeoutMs, 1000);
     } finally { page.off("console", onConsole); }
-    if (finished || started) { try { await page.reload({ waitUntil: "domcontentloaded" }); } catch {} await sleep(1500); }
+    const left = () => (deadline ? deadline - Date.now() : Infinity);
+    if ((finished || started) && left() > 5000) {
+      try { await page.reload({ waitUntil: "domcontentloaded", timeout: Math.min(15000, left() - 2000) }); } catch {}
+      await sleep(1500);
+    }
     const still = await antibot.detect(page);
     log(still ? `antibot: still walled by ${still}` : `antibot: cleared (${finished ? "solver finished" : "wall went away"})`);
     return { ok: !still, vendor: still || vendor, solved: finished };
