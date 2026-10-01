@@ -1204,6 +1204,65 @@ const parseSummaryLine = text => {
   return { title, quantity: Number.isInteger(quantity) ? quantity : null, amount };
 };
 
+// ── antibot — an anti-bot wall is the SUPPLIER refusing the browser ──
+// Measured on thetrainline.com (2026-10-01): the page loaded, the search
+// form worked, and the results XHR answered with a DataDome interstitial
+// ({"url":"https://geo.captcha-delivery.com/interstitial/…"}). The recipe saw
+// zero journeys and exited 3, "no train found" — a lie about the inventory,
+// scored against its author. A wall is exit 2 (captcha): the runtime treats
+// it as the supplier, not the recipe, and retries once.
+//
+// The runtime's sessions run with Browserbase's captcha solver ON. It works
+// on the PAGE (not on an XHR the recipe reads), and it announces itself on
+// the console: "browserbase-solving-started" / "browserbase-solving-finished".
+// antibot.clear() waits for that solve when a wall is showing, reloads once
+// it is gone, and tells you whether the page is usable — so a recipe writes
+// one line before its search, and one check after it.
+const ANTIBOT_MARKERS = [
+  [/captcha-delivery\.com|datadome/i, "datadome"],
+  [/px-captcha|perimeterx|human\.security|_pxhd/i, "perimeterx"],
+  [/challenges\.cloudflare\.com|cf-chl-|cf_chl_|turnstile/i, "cloudflare"],
+  [/\b_abck\b|akamai[^"]{0,40}bot|sec-cpt/i, "akamai"],
+  [/hcaptcha\.com|recaptcha\/(?:api|enterprise)/i, "captcha"],
+];
+// antibotIn names the anti-bot vendor a text (a response body, a URL, a
+// page's HTML) shows, or "" — pure, so a recipe's own network capture can
+// ask it of every supplier response it reads.
+export const antibotIn = text => {
+  const s = String(text || "");
+  for (const [re, name] of ANTIBOT_MARKERS) if (re.test(s)) return name;
+  return "";
+};
+export const antibot = {
+  in: antibotIn,
+  // detect(page): the wall showing on the page right now ("" = none) —
+  // its frames (DataDome and PerimeterX render in an iframe) and its HTML.
+  async detect(page) {
+    try {
+      for (const f of page.frames()) { const v = antibotIn(f.url()); if (v) return v; }
+      return antibotIn(await page.content());
+    } catch { return ""; }
+  },
+  // clear(page): when a wall shows, wait (≤ timeoutMs) for the solver to
+  // finish, reload, and report { ok, vendor, solved }. ok:false = still
+  // walled: bail(EXIT.captcha, …), never a "not found" exit.
+  async clear(page, { timeoutMs = 45000, log = L } = {}) {
+    const vendor = await antibot.detect(page);
+    if (!vendor) return { ok: true, vendor: "", solved: false };
+    log(`antibot: ${vendor} wall — waiting for the session's captcha solver`);
+    let started = false, finished = false;
+    const onConsole = m => { const t = m.text(); if (t.includes("browserbase-solving-started")) started = true; if (t.includes("browserbase-solving-finished")) finished = true; };
+    page.on("console", onConsole);
+    try {
+      await until(async () => finished || !(await antibot.detect(page)), timeoutMs, 1000);
+    } finally { page.off("console", onConsole); }
+    if (finished || started) { try { await page.reload({ waitUntil: "domcontentloaded" }); } catch {} await sleep(1500); }
+    const still = await antibot.detect(page);
+    log(still ? `antibot: still walled by ${still}` : `antibot: cleared (${finished ? "solver finished" : "wall went away"})`);
+    return { ok: !still, vendor: still || vendor, solved: finished };
+  },
+};
+
 export const shopify = {
   handle: shopifyHandle,
   variantParam: shopifyVariantParam,

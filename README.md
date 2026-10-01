@@ -573,6 +573,16 @@ thetrainline.com), `flow: guest`, `oracle: {type: email}` (patterns optional),
 dry run (a few weeks out) and fails a walk that finds no train. Start from
 `rail.example.com/`.
 
+### Anti-bot walls (`antibot`)
+
+A supplier refusing the BROWSER is not an empty inventory. Before a search,
+`const r = await antibot.clear(page)` waits for the session's captcha solver
+when a wall shows (DataDome, PerimeterX, Cloudflare, Akamai), reloads, and
+returns `{ok, vendor}`; `ok:false` → `bail(EXIT.captcha, …)`. For responses you
+read from the network, `antibotIn(body)` names the vendor or returns `""`.
+Exit 2 is scored as the supplier's flakiness and retried once by the gate;
+exit 3 ("not found") on a walled page is a lie about the inventory.
+
 ### What a protocol-2 recipe must never do
 
 - click Pay, or wait for an approval — your walk is handed no card and no

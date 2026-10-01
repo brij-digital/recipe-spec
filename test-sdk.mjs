@@ -499,5 +499,12 @@ import { connectRuntimeBrowser } from "./sdk/index.mjs";
   check("rail toy: buy walks to a cashier with no ZIP, and never clicks Pay",
     br.status === 0 && buy?.payReachable === true && buy.payClicked === false && buy.cashier.merchant_total === 91 && !("ship_to_postal_code" in buy.cashier));
 }
+// antibot: a wall is named, a clean supplier answer is not.
+{
+  const { antibotIn } = await import("./sdk/index.mjs");
+  check("antibot: Trainline's DataDome interstitial is named", antibotIn('{"url":"https://geo.captcha-delivery.com/interstitial/?initialCid=x"}') === "datadome");
+  check("antibot: PerimeterX and Cloudflare are named", antibotIn('<div id="px-captcha">') === "perimeterx" && antibotIn("https://challenges.cloudflare.com/cdn-cgi/x") === "cloudflare");
+  check("antibot: an ordinary results payload is not a wall", antibotIn('{"journeys":[{"id":"j1","price":{"amount":45}}]}') === "");
+}
 console.log(`SDK unit total (with rail): ${unit - unitFailed}/${unit} passed`);
 if (unitFailed) process.exit(1);
