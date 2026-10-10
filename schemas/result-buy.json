@@ -22,7 +22,7 @@
       "required": ["merchant_total", "currency", "lines"],
       "properties": {
         "merchant_total": { "type": "number", "exclusiveMinimum": 0 },
-        "currency": { "type": "string", "pattern": "^[Uu][Ss][Dd]$" },
+        "currency": { "type": "string", "pattern": "^([Uu][Ss][Dd]|[Ee][Uu][Rr]|[Gg][Bb][Pp]|[Cc][Hh][Ff])$" },
         "lines": {
           "type": "array",
           "minItems": 1,

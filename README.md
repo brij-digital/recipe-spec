@@ -127,18 +127,26 @@ ask "what mode am I in". A mode was a string you were asked to honour; a
 missing card is not something you can misread, ignore, or work around. Your
 code is identical either way except for the last click.
 
-### 2.3 Prices: USD, and say so
+### 2.3 Prices: say the currency, and read it from the supplier
 
-The marketplace settles in USD and **converts nothing**. Every price you
-report — search offers, fare menus, the cashier total — must carry
-`currency: "USD"`, and a missing currency is refused as loudly as a wrong one:
-a price without one is not "probably dollars", it is a price nobody checked.
+Every price you report — search offers, fare menus, quotes, discovered
+items, the cashier total — carries its `currency`, and a missing currency is
+refused as loudly as a wrong one: a price without one is not "probably
+dollars", it is a price nobody checked.
 
-If your supplier prices in another currency, that is a property of the URL you
-chose, not a fact of life — Ryanair prices EUR on `/gb/en/` and USD on
-`/us/en/`. Read the currency back from the supplier rather than asserting it
-in your code: a constant in your recipe is exactly how a EUR menu gets sold as
-dollars for a day.
+Which currencies are sellable depends on the protocol:
+
+- **protocol 1 (flights)**: `USD` only. Flights are sold as quoted and
+  nothing converts.
+- **protocol 2 (`quote`, `buy`, `discover`)**: `USD`, `EUR`, `GBP` or `CHF` —
+  the merchant's OWN currency. The buyer pays USDC; the marketplace converts
+  your quote at the day's ECB rate plus a margin, freezes the merchant total
+  in your currency, and the payer pays the cashier in that currency. Report
+  what the merchant actually charges, in the currency it charges it.
+
+Read the currency back from the supplier rather than asserting it in your
+code: a constant in your recipe is exactly how a EUR menu gets sold as
+dollars for a day (Ryanair prices EUR on `/gb/en/` and USD on `/us/en/`).
 
 ### 2.4 The cashier total (`book`)
 
@@ -440,7 +448,7 @@ source you read back must hash to its `version`.
 Protocol 2 sells **one product on one merchant website** — a Shopify store
 first. Its two tasks are global across verticals: `quote` prices one item
 for one destination, `buy` walks the purchase to the cashier. Everything in
-§2 still holds (one `RECIPE_INPUT` document, USD only, signals, exit codes,
+§2 still holds (one `RECIPE_INPUT` document, a currency on every price (§2.3), signals, exit codes,
 case files, lint); what changes is below. The toy is
 [`shop.example.com/`](shop.example.com/), offline, like `example.com`.
 
@@ -465,7 +473,7 @@ coverage: { countries: [US], max_quantity: 10 }
 conformance:
   products:                      # what the dry run and the canary quote and walk
     - { ref: https://store.example/products/tee, selections: { Size: M }, quantity: 2 }
-payment: { currency: USD }
+payment: { currency: USD }      # the merchant's own: USD, EUR, GBP or CHF
 author: { wallet: … }
 ```
 
@@ -512,8 +520,8 @@ settlement.
    mode.
 2. **the payer** — the marketplace's own code, no author file in it. It
    takes the session, re-reads the cashier and **refuses before any human
-   is paged** a checkout that is not USD, totals more than `engaged` +
-   $0.01, has more than one line, a quantity or a ZIP that is not the
+   is paged** a checkout that is not in `engaged.currency`, totals more
+   than `engaged.merchant_total` + 0.01 of that currency, has more than one line, a quantity or a ZIP that is not the
    order's, or any ticked paid add-on (shipping protection, gift wrap, tip,
    upsell). Then the human gate, then the card, then Pay and 3-D Secure.
 
@@ -568,7 +576,7 @@ stays the v1 flight task). Everything after it is the shared `quote` / `buy`.
 Manifest: `product: rail`, `capabilities: {discover: {input_schema: rail-search.v1}, quote, buy}`,
 `requires: [person]`, `cashier: trainline` (the payer adapter for
 thetrainline.com), `flow: guest`, `oracle: {type: email}` (patterns optional),
-`coverage.max_adults`, `payment.currency: USD`, and `conformance.routes`:
+`coverage.max_adults`, `payment.currency` (the merchant's: USD, EUR, GBP or CHF), and `conformance.routes`:
 3–5 `{origin, destination}` pairs with DAILY service — the gate draws one per
 dry run (a few weeks out) and fails a walk that finds no train. Start from
 `rail.example.com/`.

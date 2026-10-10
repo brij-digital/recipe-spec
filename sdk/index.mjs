@@ -96,13 +96,23 @@ export const until = async (cond, ms = 8000, step = 400) => {
 // DX, the runner is the trust boundary.
 const isNum = x => typeof x === "number" && Number.isFinite(x);
 const isStr = x => typeof x === "string" && x.length > 0;
-// The marketplace settles in USD and converts nothing, so a price without a
-// currency is not "probably dollars" — it is a price nobody checked. Say it
-// once, here, and every result carries a currency that was verified.
+// A price without a currency is not "probably dollars" — it is a price
+// nobody checked. Say it once, here, and every result carries a currency
+// that was verified. Two lists, by protocol:
+//  - protocol 1 (flights) is sold as quoted: USD only, nothing converts.
+//  - protocol 2 (shop.v1, rail) is sold in USDC but PAID in the merchant's
+//    own currency: the marketplace converts the quote at the day's ECB rate
+//    plus a margin, and the payer compares the cashier in that currency.
+//    Only currencies the marketplace has a rate for are sellable.
 const SELLABLE_CURRENCY = "USD";
+const MERCHANT_CURRENCIES = ["USD", "EUR", "GBP", "CHF"];
 const currencyError = (what, currency) =>
-  !isStr(currency) ? `${what}: currency is required (the marketplace sells ${SELLABLE_CURRENCY} and converts nothing)`
-  : currency.toUpperCase() !== SELLABLE_CURRENCY ? `${what}: currency ${currency} is not sellable — this marketplace settles in ${SELLABLE_CURRENCY}`
+  !isStr(currency) ? `${what}: currency is required (flights are sold in ${SELLABLE_CURRENCY} and nothing converts)`
+  : currency.toUpperCase() !== SELLABLE_CURRENCY ? `${what}: currency ${currency} is not sellable — flights settle in ${SELLABLE_CURRENCY}`
+  : "";
+const merchantCurrencyError = (what, currency) =>
+  !isStr(currency) ? `${what}: currency is required (one of ${MERCHANT_CURRENCIES.join(", ")})`
+  : !MERCHANT_CURRENCIES.includes(currency.toUpperCase()) ? `${what}: currency ${currency} is not sellable — the marketplace converts ${MERCHANT_CURRENCIES.join(", ")}`
   : "";
 
 // ── protocol 2 (shop.v1) vocabulary ──
@@ -138,7 +148,7 @@ const cashierErrors = c => {
   const errs = [];
   if (!isObj(c)) return ["cashier must be an object"];
   if (!isNum(c.merchant_total) || c.merchant_total <= 0) errs.push("cashier.merchant_total must be a number > 0");
-  const cur = currencyError("cashier", c.currency);
+  const cur = merchantCurrencyError("cashier", c.currency);
   if (cur) errs.push(cur);
   if (!Array.isArray(c.lines) || c.lines.length === 0) errs.push("cashier.lines must be a non-empty array (the order summary as the merchant shows it)");
   else c.lines.forEach((l, i) => {
@@ -207,7 +217,7 @@ export const validators = {
       if (!isStr(it.ref)) errs.push(`items[${i}].ref must be a non-empty string (the recipe's own id for this item)`);
       if (!isStr(it.title)) errs.push(`items[${i}].title must be a non-empty string`);
       if (!isNum(it.price_from) || it.price_from <= 0) errs.push(`items[${i}].price_from must be a number > 0`);
-      const cur = currencyError(`items[${i}]`, it.currency);
+      const cur = merchantCurrencyError(`items[${i}]`, it.currency);
       if (cur) errs.push(cur);
       if (it.summary !== undefined && !isObj(it.summary)) errs.push(`items[${i}].summary must be an object when present`);
     });
@@ -271,7 +281,7 @@ export const validators = {
         }
       }
     }
-    const cur = currencyError("quote", p.currency);
+    const cur = merchantCurrencyError("quote", p.currency);
     if (cur) errs.push(cur);
     if (p.shipping_method !== undefined && typeof p.shipping_method !== "string") errs.push("shipping_method must be a string when present");
     // When the service is over (the parcel delivered) — what the escrow's

@@ -17,7 +17,7 @@
           "ref": { "type": "string", "minLength": 1 },
           "title": { "type": "string", "minLength": 1 },
           "price_from": { "type": "number", "exclusiveMinimum": 0 },
-          "currency": { "type": "string", "pattern": "^[Uu][Ss][Dd]$" },
+          "currency": { "type": "string", "pattern": "^([Uu][Ss][Dd]|[Ee][Uu][Rr]|[Gg][Bb][Pp]|[Cc][Hh][Ff])$" },
           "summary": {
             "type": "object",
             "description": "Descriptive, for the buyer's agent. Rail: departs_at, arrives_at (local ISO, no zone), origin, destination (station names as the supplier shows them), changes, duration_min, operator.",

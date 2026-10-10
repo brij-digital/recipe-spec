@@ -31,7 +31,7 @@ required:
                               # merchant_total. Informational for the walk —
                               # the payer, not the recipe, refuses a cashier
                               # above it (+0.01) before the human gate
-  - engaged.currency          # "USD"
+  - engaged.currency          # the merchant's own currency, as quoted: USD, EUR, GBP or CHF
   - contact_email             # the order's oracle address (o-<id>@bookings.brij.fi):
                               # the checkout's email, or the merchant's
                               # confirmation never reaches settlement
