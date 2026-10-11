@@ -53,6 +53,10 @@ required:
 optional:
   - item.selections                     # as quoted
   - fulfilment.recipient.phone          # E.164 — fill it if the checkout asks
+  - fulfilment["contact.phone"].phone   # the buyer's mobile, E.164 ("+33612345678") —
+                                        # present when your quote's `requires`
+                                        # lists contact.phone (the buyer is asked
+                                        # for it); never invent one
   - fulfilment["address.shipping"].line2
 runtime_provides:
   - browser_session
