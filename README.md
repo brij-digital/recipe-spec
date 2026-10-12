@@ -478,7 +478,7 @@ author: { wallet: … }
 ```
 
 **The requirement vocabulary** is closed: `person`, `document`, `recipient`,
-`address.shipping`, `contact.phone`, `loyalty`. The marketplace asks the
+`address.shipping`, `contact.phone`, `contact.postal_code`, `loyalty`. The marketplace asks the
 buyer for exactly the slots you name before it funds anything — a slot
 outside the list is a question nobody can be asked, and is refused.
 

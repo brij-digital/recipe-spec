@@ -230,7 +230,7 @@ import { TASK_PROTOCOL, PROTOCOL_VERSION, PROTOCOL_VERSION_V2, REQUIREMENT_SLOTS
   check("v2: PROTOCOL_VERSION stays 1 for v1 recipes", PROTOCOL_VERSION === 1 && PROTOCOL_VERSION_V2 === 2);
   check("v2: tasks map to their protocol", TASK_PROTOCOL.book === 1 && TASK_PROTOCOL.search === 1 && TASK_PROTOCOL["offer-details"] === 1 && TASK_PROTOCOL.quote === 2 && TASK_PROTOCOL.buy === 2);
   check("v2: the requirement vocabulary is the contract's six slots",
-    JSON.stringify(REQUIREMENT_SLOTS) === JSON.stringify(["person", "document", "recipient", "address.shipping", "contact.phone", "loyalty"]));
+    JSON.stringify(REQUIREMENT_SLOTS) === JSON.stringify(["person", "document", "recipient", "address.shipping", "contact.phone", "contact.postal_code", "loyalty"]));
 
   // emitResult prints and sets process.exitCode, so it runs in a child.
   const emitChild = (task, payload) => spawnSync(process.execPath, ["--input-type=module", "-e", `

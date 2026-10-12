@@ -120,7 +120,7 @@ const merchantCurrencyError = (what, currency) =>
 // the marketplace asks the BUYER for exactly these before it funds anything,
 // so a slot it does not know is a question nobody can be asked — and a buy
 // that then stalls on a form with the customer's money in escrow.
-export const REQUIREMENT_SLOTS = Object.freeze(["person", "document", "recipient", "address.shipping", "contact.phone", "loyalty"]);
+export const REQUIREMENT_SLOTS = Object.freeze(["person", "document", "recipient", "address.shipping", "contact.phone", "contact.postal_code", "loyalty"]);
 const UNAVAILABLE_REASONS = ["out_of_stock", "not_shippable", "quantity_limit", "not_found"];
 const QUOTE_STATUSES = ["priced", "options_required", "unavailable"];
 // Money is compared to the cent. The float slack is not a second tolerance:

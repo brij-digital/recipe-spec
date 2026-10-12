@@ -57,6 +57,13 @@ optional:
                                         # present when your quote's `requires`
                                         # lists contact.phone (the buyer is asked
                                         # for it); never invent one
+  - fulfilment["contact.postal_code"].postal_code
+                                        # the buyer's own postcode, as they
+                                        # typed it ("75011") — present when
+                                        # your quote's `requires` lists
+                                        # contact.postal_code (an operator's
+                                        # contact form asks it; it is no
+                                        # address); never invent one
   - fulfilment["address.shipping"].line2
 runtime_provides:
   - browser_session
