@@ -473,7 +473,7 @@ coverage: { countries: [US], max_quantity: 10 }
 conformance:
   products:                      # what the dry run and the canary quote and walk
     - { ref: https://store.example/products/tee, selections: { Size: M }, quantity: 2 }
-payment: { currency: USD }      # the merchant's own: USD, EUR, GBP or CHF
+payment: { currency: USD }      # the merchant's own: any currency with an ECB reference rate (USD, EUR, GBP, CHF, INR, JPY, …)
 author: { wallet: … }
 ```
 
@@ -576,7 +576,7 @@ stays the v1 flight task). Everything after it is the shared `quote` / `buy`.
 Manifest: `product: rail`, `capabilities: {discover: {input_schema: rail-search.v1}, quote, buy}`,
 `requires: [person]`, `cashier: trainline` (the payer adapter for
 thetrainline.com), `flow: guest`, `oracle: {type: email}` (patterns optional),
-`coverage.max_adults`, `payment.currency` (the merchant's: USD, EUR, GBP or CHF), and `conformance.routes`:
+`coverage.max_adults`, `payment.currency` (the merchant's: any currency the ECB publishes a daily rate for, or EUR), and `conformance.routes`:
 3–5 `{origin, destination}` pairs with DAILY service — the gate draws one per
 dry run (a few weeks out) and fails a walk that finds no train. Start from
 `rail.example.com/`.

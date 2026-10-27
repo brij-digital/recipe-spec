@@ -1117,14 +1117,46 @@
      "merchant_fees": 0,
      "merchant_total": 71.96
     },
-    "currency": "JPY",
+    "currency": "ARS",
     "service_ends_at": "2026-10-21",
     "requires": [
      "recipient",
      "address.shipping"
     ]
    },
-   "comment": "protocol 2 converts USD, EUR, GBP and CHF at the ECB rate; a currency with no rate is refused"
+   "comment": "protocol 2 converts every currency the ECB publishes a rate for (and EUR); ARS has none, so it is refused"
+  },
+  {
+   "name": "quote priced in INR, a currency with an ECB rate",
+   "task": "quote",
+   "valid": true,
+   "payload": {
+    "status": "priced",
+    "item": {
+     "ref": "https://shop.example.com/products/classic-tee?variant=4242",
+     "title": "Classic Tee - M / Black",
+     "selections": {
+      "Size": "M",
+      "Color": "Black"
+     },
+     "quantity": 3,
+     "unit_price": 19.99
+    },
+    "breakdown": {
+     "items": 59.97,
+     "shipping": 6.99,
+     "tax": 5.0,
+     "merchant_fees": 0,
+     "merchant_total": 71.96
+    },
+    "currency": "INR",
+    "service_ends_at": "2026-10-21",
+    "requires": [
+     "recipient",
+     "address.shipping"
+    ]
+   },
+   "comment": "INR has an ECB reference rate, so the marketplace can price it"
   },
   {
    "name": "quote priced in EUR, the merchant's own currency",
@@ -1693,6 +1725,52 @@
     "payReachable": true,
     "cashier": {
      "merchant_total": 71.96,
+     "currency": "ARS",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   },
+   "comment": "protocol 2 converts every currency the ECB publishes a rate for (and EUR); ARS has none, so it is refused"
+  },
+  {
+   "name": "buy cashier in INR, a currency with an ECB rate",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
+     "currency": "INR",
+     "lines": [
+      {
+       "title": "Classic Tee - M / Black",
+       "quantity": 3,
+       "amount": 59.97
+      }
+     ],
+     "ship_to_postal_code": "94107"
+    }
+   },
+   "comment": "INR has an ECB reference rate, so the marketplace can price it"
+  },
+  {
+   "name": "buy cashier in JPY, a currency with an ECB rate",
+   "task": "buy",
+   "valid": true,
+   "payload": {
+    "payClicked": false,
+    "paymentStatus": "unverified",
+    "payReachable": true,
+    "cashier": {
+     "merchant_total": 71.96,
      "currency": "JPY",
      "lines": [
       {
@@ -1704,7 +1782,7 @@
      "ship_to_postal_code": "94107"
     }
    },
-   "comment": "protocol 2 converts USD, EUR, GBP and CHF at the ECB rate; a currency with no rate is refused"
+   "comment": "JPY has an ECB reference rate, so the marketplace can price it"
   },
   {
    "name": "buy cashier in EUR, the merchant's own currency",
@@ -2371,7 +2449,7 @@
       "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
       "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
       "price_from": 45.5,
-      "currency": "JPY",
+      "currency": "ARS",
       "summary": {
        "departs_at": "2026-12-15T08:04",
        "arrives_at": "2026-12-15T10:02",
@@ -2384,7 +2462,33 @@
      }
     ]
    },
-   "comment": "protocol 2 converts USD, EUR, GBP and CHF at the ECB rate; a currency with no rate is refused"
+   "comment": "protocol 2 converts every currency the ECB publishes a rate for (and EUR); ARS has none, so it is refused"
+  },
+  {
+   "name": "discover item in INR, a currency with an ECB rate",
+   "task": "discover",
+   "valid": true,
+   "payload": {
+    "count": 1,
+    "items": [
+     {
+      "ref": "tl:FRPLY-FRLPD:2026-12-15T08:04:TGV6601",
+      "title": "Paris Gare de Lyon \u2192 Lyon Part-Dieu 08:04\u201310:02",
+      "price_from": 45.5,
+      "currency": "INR",
+      "summary": {
+       "departs_at": "2026-12-15T08:04",
+       "arrives_at": "2026-12-15T10:02",
+       "origin": "Paris Gare de Lyon",
+       "destination": "Lyon Part-Dieu",
+       "changes": 0,
+       "duration_min": 118,
+       "operator": "SNCF"
+      }
+     }
+    ]
+   },
+   "comment": "INR has an ECB reference rate, so the marketplace can price it"
   },
   {
    "name": "discover item in EUR, the merchant's own currency",

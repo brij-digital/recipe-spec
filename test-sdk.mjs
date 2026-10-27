@@ -423,7 +423,7 @@ import { connectRuntimeBrowser } from "./sdk/index.mjs";
   const lineOf = r => { const l = r.stdout.split("\n").find(x => x.startsWith(MARKERS.result)); return l ? JSON.parse(l.slice(MARKERS.result.length)) : null; };
   const d = lineOf(emitChild("discover", { count: 0, items: [], v: 1, task: "search" }));
   check("rail: discover is stamped v:2, task:discover (payload values ignored)", d?.v === 2 && d?.task === "discover");
-  const badD = emitChild("discover", { count: 1, items: [{ ref: "x", title: "t", price_from: 10, currency: "JPY" }] });
+  const badD = emitChild("discover", { count: 1, items: [{ ref: "x", title: "t", price_from: 10, currency: "ARS" }] });
   check("rail: a malformed discover emits NO result line and exits 7", lineOf(badD) === null && badD.status === 7);
 
   const saved = process.env.RECIPE_INPUT;

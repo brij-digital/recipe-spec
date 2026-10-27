@@ -105,7 +105,9 @@ const isStr = x => typeof x === "string" && x.length > 0;
 //    plus a margin, and the payer compares the cashier in that currency.
 //    Only currencies the marketplace has a rate for are sellable.
 const SELLABLE_CURRENCY = "USD";
-const MERCHANT_CURRENCIES = ["USD", "EUR", "GBP", "CHF"];
+// Every currency the ECB publishes a daily reference rate for, plus EUR —
+// the marketplace can price exactly these, and no other.
+const MERCHANT_CURRENCIES = ["USD", "EUR", "GBP", "CHF", "AUD", "BRL", "CAD", "CNY", "CZK", "DKK", "HKD", "HUF", "IDR", "ILS", "INR", "ISK", "JPY", "KRW", "MXN", "MYR", "NOK", "NZD", "PHP", "PLN", "RON", "SEK", "SGD", "THB", "TRY", "ZAR"];
 const currencyError = (what, currency) =>
   !isStr(currency) ? `${what}: currency is required (flights are sold in ${SELLABLE_CURRENCY} and nothing converts)`
   : currency.toUpperCase() !== SELLABLE_CURRENCY ? `${what}: currency ${currency} is not sellable — flights settle in ${SELLABLE_CURRENCY}`
